@@ -1,4 +1,4 @@
-"""Path safety layer -- the #1 security boundary of jp (DESIGN §4).
+"""Path safety layer -- the #1 security boundary of jp (see docs/architecture.md).
 
 This module is the *only* place allowed to translate between local filesystem
 paths and remote Contents-API paths, and it is the gatekeeper for every
@@ -20,7 +20,7 @@ hostile remote server, so the rules are strict and intentionally paranoid:
   * ``find_root``          -- locate the repo root (dir containing ``.jp``).
 
 Nothing the path layer produces for the remote may start with a dot, and our
-temporary remote dir is ``jp-tmp`` (no leading dot) on purpose (DESIGN §8).
+temporary remote dir is ``jp-tmp`` (no leading dot) on purpose (see docs/architecture.md).
 """
 
 from __future__ import annotations
@@ -49,7 +49,7 @@ _WIN_RESERVED = {
     *(f"lpt{i}" for i in range(1, 10)),
 }
 
-# Prefixes we refuse to operate on: too broad / shared spaces (DESIGN §4).
+# Prefixes we refuse to operate on: too broad / shared spaces (see docs/architecture.md).
 # "compartilhado" and "lapix" are the real shared roots on the UFSC server; a
 # user (or a tampered .jp/config) pointing a workspace there could damage another
 # lab's data, so they are refused as ANY path segment, not just the first.
@@ -138,7 +138,7 @@ def _looks_like_windows_absolute(raw: str) -> bool:
 def is_hidden(rel: str) -> bool:
     """True if any component of the relative path starts with a dot.
 
-    Used to enforce the dotfile-skip policy (DESIGN §8): the server rejects
+    Used to enforce the dotfile-skip policy (see docs/architecture.md): the server rejects
     hidden uploads, so we never PUT them and report them instead.
     """
     norm = rel.replace("\\", "/")
@@ -152,7 +152,7 @@ def validate_prefix(prefix: str) -> str:
     """Validate and normalize the remote *prefix* (the server-side root).
 
     Refuses empty, root, ``.``, and shared-space names so jp can never be
-    pointed at a whole-server or shared directory (DESIGN §4 / §7).
+    pointed at a whole-server or shared directory (see docs/architecture.md).
     Returns the normalized prefix with NO leading or trailing slash.
     """
     if prefix is None:

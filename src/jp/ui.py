@@ -12,7 +12,7 @@ from __future__ import annotations
 import os
 import re
 import sys
-from typing import Iterable
+from collections.abc import Iterable
 
 # Secrets we have actually seen this process (e.g. the loaded token). They are
 # matched literally and removed. We never store the token anywhere else.

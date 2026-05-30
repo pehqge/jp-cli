@@ -1,6 +1,6 @@
 """Exception hierarchy and exit codes for jp.
 
-Exit codes (DESIGN §9):
+Exit codes (see docs/architecture.md):
     0   success
     1   generic / unexpected error
     2   usage error (bad CLI args)

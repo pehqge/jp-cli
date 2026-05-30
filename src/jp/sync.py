@@ -1,4 +1,4 @@
-"""The safe-sync engine: scan, hash, 3-way diff, push, pull (DESIGN §6, §7, §8).
+"""The safe-sync engine: scan, hash, 3-way diff, push, pull (see docs/architecture.md).
 
 Invariants enforced here (and exercised by the test suite):
 
@@ -160,7 +160,7 @@ def _walk_remote(api: Api, prefix: str, api_path: str, acc: dict[str, RemoteEntr
     # A single corrupted entry can make the server return 400 "is not a
     # directory" for a GET on the PARENT (observed: a trashed/half-deleted child
     # poisons the parent listing). Degrade with a warning instead of aborting the
-    # whole status/pull (DESIGN §1).
+    # whole status/pull (see docs/architecture.md).
     try:
         entries = api.list_dir(api_path)
     except ApiError as exc:
@@ -323,7 +323,7 @@ def _classify(
     base: Entry | None,
     rentry: RemoteEntry | None,
 ) -> Change:
-    """Map the (local, remote, base) triple to a Change per the DESIGN §6 table."""
+    """Map the (local, remote, base) triple to a Change per the the design docstable."""
     local_changed = (local_sha != base_sha) if local_exists else (base_sha is not None)
 
     # No base yet: decide purely from existence (and only download when BOTH

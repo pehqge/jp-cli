@@ -1,6 +1,6 @@
 """``jp login`` -- record the *path* to the token file (never the token value).
 
-Phase-1 policy (DESIGN §5): jp stores only a path in config. If the user passes
+Phase-1 policy (see docs/architecture.md): jp stores only a path in config. If the user passes
 ``--token-path`` we record it. Otherwise we read a token from stdin and write it
 to a private (0600) file under ``~/.config/jp/token`` and record THAT path. The
 token value is registered for redaction and never echoed.
