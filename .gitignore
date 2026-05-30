@@ -1,0 +1,51 @@
+# Byte-compiled / optimized / caches
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+*.egg
+
+# Build artifacts
+build/
+dist/
+*.pyz
+*.spec
+
+# Distribution binaries produced by PyInstaller (anchored to repo root so the
+# `src/jp/` package directory is NEVER ignored)
+/jp
+/jp.exe
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+
+# Tooling caches
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+.tox/
+
+# Editors / OS
+.DS_Store
+*.swp
+.idea/
+.vscode/
+
+# Secrets / credentials -- NEVER commit a token
+*.token
+*token*
+.jupyter_ufsc_token
+.env
+.env.*
+
+# jp workspace metadata (created in a user's synced folder, never in this repo)
+.jp/
+
+# Internal research notes and scratch (kept locally, not published)
+research/
+refine_review_workflow.js
