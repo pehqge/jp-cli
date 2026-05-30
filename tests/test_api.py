@@ -1,0 +1,306 @@
+"""Tests for jp.api.Api transport against the REAL empirical server behaviour.
+
+These mock urllib at the boundary (urlopen / opener) so we never touch the
+network, while exercising the exact quirks recorded in
+``research/01-jupyter-api.md``:
+
+  * ``hash()`` uses ``content=0&hash=1`` and returns the server sha256 without
+    a body download.
+  * a 404 GET body is PLAIN TEXT (not JSON) and must NOT crash error parsing.
+  * base64 download ``content`` carries a trailing newline that must be stripped
+    before decoding (else the bytes are corrupted).
+  * the health probe must NOT follow redirects: a 3xx -> /hub/ means the server
+    is stopped and yields an actionable ServerDownError.
+  * notebooks are fetched/sent as raw bytes (type=file) and detected by ext.
+  * PUT reports create (201) vs update (200).
+"""
+
+from __future__ import annotations
+
+import base64
+import hashlib
+import io
+import json
+import urllib.error
+import urllib.request
+
+import pytest
+
+from jp.api import Api
+from jp.errors import ApiError, AuthError, NetworkError, ServerDownError
+
+
+class _FakeResp(io.BytesIO):
+    """Minimal stand-in for an http.client.HTTPResponse context manager."""
+
+    def __init__(self, body: bytes, status: int = 200, content_type: str = "application/json"):
+        super().__init__(body)
+        self.status = status
+        self.headers = {"Content-Type": content_type}
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *a):
+        self.close()
+        return False
+
+
+def _api() -> Api:
+    return Api("https://hub.example/user/alice", "tok-abcdef1234567890")
+
+
+# --------------------------------------------------------------------------- #
+# hash(): cheap server sha256 via content=0&hash=1 (NO body download)
+# --------------------------------------------------------------------------- #
+def test_hash_uses_content0_hash1_and_returns_sha256(monkeypatch):
+    api = _api()
+    payload = b"hello jp\nline2\n"
+    sha = hashlib.sha256(payload).hexdigest()
+    seen_urls: list[str] = []
+
+    def fake_urlopen(req, timeout=None, context=None):
+        seen_urls.append(req.full_url)
+        body = json.dumps(
+            {"content": None, "size": len(payload), "hash": sha, "hash_algorithm": "sha256"}
+        ).encode()
+        return _FakeResp(body)
+
+    monkeypatch.setattr(urllib.request, "urlopen", fake_urlopen)
+    got = api.hash("users/alice/hello.txt")
+    assert got == sha
+    # We asked WITHOUT content (content=0) and WITH hash=1 -> no body download.
+    assert any("content=0" in u and "hash=1" in u for u in seen_urls)
+
+
+def test_hash_returns_none_when_server_gives_no_hash(monkeypatch):
+    api = _api()
+
+    def fake_urlopen(req, timeout=None, context=None):
+        return _FakeResp(json.dumps({"hash": None, "hash_algorithm": None}).encode())
+
+    monkeypatch.setattr(urllib.request, "urlopen", fake_urlopen)
+    assert api.hash("users/alice/x.txt") is None
+
+
+def test_hash_returns_none_on_404(monkeypatch):
+    api = _api()
+
+    def fake_urlopen(req, timeout=None, context=None):
+        raise urllib.error.HTTPError(
+            req.full_url, 404, "Not Found", {}, io.BytesIO(b"does not exist")
+        )
+
+    monkeypatch.setattr(urllib.request, "urlopen", fake_urlopen)
+    assert api.hash("users/alice/missing.txt") is None
+
+
+# --------------------------------------------------------------------------- #
+# 404 GET body is PLAIN TEXT -> defensive parsing must not raise
+# --------------------------------------------------------------------------- #
+def test_404_plain_text_body_does_not_crash_and_maps_to_apierror(monkeypatch):
+    api = _api()
+
+    def fake_urlopen(req, timeout=None, context=None):
+        # Real server: 404 body is plain text, NOT JSON.
+        raise urllib.error.HTTPError(
+            req.full_url,
+            404,
+            "Not Found",
+            {"Content-Type": "text/html"},
+            io.BytesIO(b"file or directory '/lapix/privado/x' does not exist"),
+        )
+
+    monkeypatch.setattr(urllib.request, "urlopen", fake_urlopen)
+    # stat() swallows 404 -> None; the underlying parse must not have thrown.
+    assert api.stat("users/alice/x") is None
+    # A raw GET that 404s on a non-stat path surfaces ApiError(status=404),
+    # and the plain-text body is carried through as detail without crashing.
+    with pytest.raises(ApiError) as ei:
+        api.get_file_bytes("users/alice/x")
+    assert ei.value.status == 404
+
+
+def test_error_detail_handles_empty_and_garbage_bodies(monkeypatch):
+    api = _api()
+
+    def make(body: bytes, code: int = 400, ctype: str = "application/json"):
+        def fake_urlopen(req, timeout=None, context=None):
+            raise urllib.error.HTTPError(
+                req.full_url, code, "Bad", {"Content-Type": ctype}, io.BytesIO(body)
+            )
+
+        return fake_urlopen
+
+    # Empty body.
+    monkeypatch.setattr(urllib.request, "urlopen", make(b""))
+    with pytest.raises(ApiError):
+        api.mkdir("users/alice/d")
+    # Garbage "json-looking" body.
+    monkeypatch.setattr(urllib.request, "urlopen", make(b"{not json at all"))
+    with pytest.raises(ApiError):
+        api.mkdir("users/alice/d2")
+
+
+# --------------------------------------------------------------------------- #
+# base64 download: trailing newline must be stripped before decode
+# --------------------------------------------------------------------------- #
+def test_get_file_bytes_strips_trailing_newline_from_base64(monkeypatch):
+    api = _api()
+    raw = bytes(range(256))  # binary, definitely non-UTF8
+    b64 = base64.b64encode(raw).decode() + "\n"  # server appends a trailing \n
+
+    def fake_urlopen(req, timeout=None, context=None):
+        assert "type=file" in req.full_url  # byte-faithful read
+        return _FakeResp(json.dumps({"format": "base64", "content": b64}).encode())
+
+    monkeypatch.setattr(urllib.request, "urlopen", fake_urlopen)
+    got = api.get_file_bytes("users/alice/blob.bin")
+    assert got == raw  # exact bytes recovered despite the trailing newline
+
+
+def test_get_file_bytes_text_format(monkeypatch):
+    api = _api()
+
+    def fake_urlopen(req, timeout=None, context=None):
+        return _FakeResp(json.dumps({"format": "text", "content": "hi\n"}).encode())
+
+    monkeypatch.setattr(urllib.request, "urlopen", fake_urlopen)
+    assert api.get_file_bytes("users/alice/a.txt") == b"hi\n"
+
+
+# --------------------------------------------------------------------------- #
+# notebooks: fetched as raw bytes (type=file), uploaded as base64
+# --------------------------------------------------------------------------- #
+def test_notebook_uploaded_as_base64_type_file(monkeypatch):
+    api = _api()
+    nb = b'{"cells": [], "metadata": {}, "nbformat": 4}\n'
+    captured = {}
+
+    def fake_urlopen(req, timeout=None, context=None):
+        captured["url"] = req.full_url
+        captured["body"] = json.loads(req.data.decode())
+        return _FakeResp(
+            json.dumps({"type": "notebook", "path": "users/alice/n.ipynb"}).encode(),
+            status=201,
+        )
+
+    monkeypatch.setattr(urllib.request, "urlopen", fake_urlopen)
+    res = api.put_file("users/alice/n.ipynb", nb)
+    assert captured["body"]["type"] == "file"  # NOT "notebook" -> byte fidelity
+    assert captured["body"]["format"] == "base64"
+    assert base64.b64decode(captured["body"]["content"]) == nb
+    assert res.created is True  # 201
+
+
+def test_put_text_for_utf8_and_reports_overwrite_with_200(monkeypatch):
+    api = _api()
+
+    def fake_urlopen(req, timeout=None, context=None):
+        body = json.loads(req.data.decode())
+        assert body["format"] == "text"  # UTF-8 content -> text format
+        assert body["type"] == "file"
+        return _FakeResp(b"{}", status=200)  # 200 = overwrote
+
+    monkeypatch.setattr(urllib.request, "urlopen", fake_urlopen)
+    res = api.put_file("users/alice/readme.txt", b"plain ascii text")
+    assert res.created is False  # 200 -> updated, not created
+
+
+def test_put_binary_uses_base64(monkeypatch):
+    api = _api()
+
+    def fake_urlopen(req, timeout=None, context=None):
+        body = json.loads(req.data.decode())
+        assert body["format"] == "base64"  # NUL byte -> not safe as text
+        return _FakeResp(b"{}", status=201)
+
+    monkeypatch.setattr(urllib.request, "urlopen", fake_urlopen)
+    api.put_file("users/alice/x.bin", b"\x00\x01\x02")
+
+
+# --------------------------------------------------------------------------- #
+# health probe: must NOT follow redirects; 3xx -> /hub means server stopped
+# --------------------------------------------------------------------------- #
+class _FakeOpener:
+    def __init__(self, behaviour):
+        self._behaviour = behaviour
+
+    def open(self, req, timeout=None):
+        return self._behaviour(req)
+
+
+def test_status_probe_up(monkeypatch):
+    api = _api()
+
+    def behaviour(req):
+        return _FakeResp(json.dumps({"started": "now"}).encode(), status=200)
+
+    monkeypatch.setattr(urllib.request, "build_opener", lambda *a, **k: _FakeOpener(behaviour))
+    res = api.status_probe()
+    assert res.up is True
+
+
+def test_status_probe_redirect_to_hub_is_server_down(monkeypatch):
+    api = _api()
+
+    def behaviour(req):
+        # Stopped server: 302 with Location into /hub/ -- raised, NOT followed.
+        raise urllib.error.HTTPError(
+            req.full_url,
+            302,
+            "Found",
+            {"Location": "/hub/user/alice/api/status"},
+            io.BytesIO(b""),
+        )
+
+    monkeypatch.setattr(urllib.request, "build_opener", lambda *a, **k: _FakeOpener(behaviour))
+    with pytest.raises(ServerDownError) as ei:
+        api.status_probe()
+    msg = ei.value.message.lower()
+    assert "start" in msg and "server" in msg  # actionable hint
+
+
+def test_status_probe_403_is_auth_error(monkeypatch):
+    api = _api()
+
+    def behaviour(req):
+        raise urllib.error.HTTPError(
+            req.full_url, 403, "Forbidden", {}, io.BytesIO(b'{"message":"Forbidden"}')
+        )
+
+    monkeypatch.setattr(urllib.request, "build_opener", lambda *a, **k: _FakeOpener(behaviour))
+    with pytest.raises(AuthError):
+        api.status_probe()
+
+
+def test_status_probe_connection_error_is_network(monkeypatch):
+    api = _api()
+
+    def behaviour(req):
+        raise urllib.error.URLError("connection refused")
+
+    monkeypatch.setattr(urllib.request, "build_opener", lambda *a, **k: _FakeOpener(behaviour))
+    with pytest.raises(NetworkError):
+        api.status_probe()
+
+
+# --------------------------------------------------------------------------- #
+# delete: non-empty dir 400 gets a clearer, actionable message
+# --------------------------------------------------------------------------- #
+def test_delete_nonempty_dir_400_is_reraised_with_hint(monkeypatch):
+    api = _api()
+
+    def fake_urlopen(req, timeout=None, context=None):
+        raise urllib.error.HTTPError(
+            req.full_url,
+            400,
+            "Bad",
+            {"Content-Type": "application/json"},
+            io.BytesIO(b'{"message":"Directory /lapix/privado/sub not empty","reason":null}'),
+        )
+
+    monkeypatch.setattr(urllib.request, "urlopen", fake_urlopen)
+    with pytest.raises(ApiError) as ei:
+        api.delete("users/alice/sub")
+    assert "recursive" in ei.value.message.lower()
