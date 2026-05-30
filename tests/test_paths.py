@@ -160,9 +160,12 @@ def test_safe_local_dest_rejects_escapes(tmp_path, evil):
 def test_safe_local_dest_forces_absolute_server_path_inside_root(tmp_path, absolute):
     # An absolute server path is NOT honored as absolute -- it is stripped of its
     # leading slash and contained INSIDE root (never writing to /etc/...).
+    # Containment is checked path-wise (not by a hardcoded "/" separator) so the
+    # assertion holds on Windows too, where paths use "\".
     dest = paths.safe_local_dest(tmp_path, absolute)
-    root_abs = str(tmp_path.resolve())
-    assert str(dest).startswith(root_abs + "/")
+    root_abs = tmp_path.resolve()
+    assert dest.is_relative_to(root_abs)
+    assert dest != root_abs
     assert str(dest) != "/etc/passwd"
 
 
