@@ -1,7 +1,7 @@
 """jp command-line entry point: argparse subcommands + safe error handling.
 
 Every command's ``run`` returns an exit code or raises a ``JpError``. This
-dispatcher translates exceptions into the DESIGN §9 exit codes and passes EVERY
+dispatcher translates exceptions into the the design docsexit codes and passes EVERY
 error message through ``ui.redact`` so a token can never leak via an error path.
 """
 
@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import argparse
 import sys
-from typing import Sequence
+from collections.abc import Sequence
 
 from . import __version__, ui
 from .commands import ALL

@@ -1,6 +1,6 @@
 """Thin JupyterHub / Jupyter-server Contents API client over stdlib urllib.
 
-Security rules (DESIGN §5):
+Security rules (see docs/architecture.md):
   * Authorization header ONLY -- the token is never put in the URL/query string.
   * TLS is always verified (a real, default ``ssl`` context). We never disable
     certificate checks.
@@ -48,7 +48,7 @@ from .errors import ApiError, AuthError, NetworkError, ServerDownError
 _DEFAULT_TIMEOUT = 30.0
 
 # Warn (do not hard-fail) before loading a very large file fully into memory:
-# there is no chunking and base64 inflates payloads by ~33% (DESIGN §1, §10).
+# there is no chunking and base64 inflates payloads by ~33% (see docs/architecture.md).
 _LARGE_FILE_WARN_BYTES = 50 * 1024 * 1024  # ~50 MiB
 
 # Extensions we treat as opaque bytes even though the server reports them as a

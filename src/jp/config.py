@@ -1,6 +1,6 @@
 """Per-repo configuration (``.jp/config.json``) and credential loading.
 
-Security rules (DESIGN §5):
+Security rules (see docs/architecture.md):
   * The config stores only the *path* to the token file, never the token value.
   * The token is read at call time from that file, registered with
     ``ui.redact`` immediately, and never written back anywhere.
@@ -35,7 +35,7 @@ class Config:
     # Default dotfile policy: skip (server rejects hidden uploads).
     dotfiles: str = "skip"
     # Network timeout (seconds) for API calls; generous because the shared box
-    # can be slow and there is no chunking for large uploads (DESIGN §1, §10).
+    # can be slow and there is no chunking for large uploads (see docs/architecture.md).
     timeout: float = 30.0
     extra: dict[str, Any] = field(default_factory=dict)
 

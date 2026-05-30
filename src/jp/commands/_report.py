@@ -10,7 +10,7 @@ def report_outcome(verb: str, outcome: Outcome, *, dry_run: bool) -> None:
     """Print a human summary of a sync run.
 
     Conflicts and per-file failures are surfaced clearly. Skipped dotfiles are
-    reported but never treated as an error (DESIGN §8).
+    reported but never treated as an error (see docs/architecture.md).
     """
     prefix = "[dry-run] would " if dry_run else ""
 

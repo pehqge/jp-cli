@@ -1,4 +1,4 @@
-"""``jp rm`` -- the ONLY command that deletes (DESIGN §7), and it is gated.
+"""``jp rm`` -- the ONLY command that deletes (see docs/architecture.md), and it is gated.
 
 Deletion is dangerous on a shared box, so it is:
   * explicit (you must name the path),

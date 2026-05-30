@@ -2,7 +2,7 @@
 
 The index records, per relative path, the state both sides agreed on at the end
 of the last successful sync. We use it as the *base* for 3-way conflict
-detection (DESIGN §6):
+detection (see docs/architecture.md):
 
     base == local == remote   -> in sync, nothing to do
     base == local, base != remote -> remote changed -> pull updates local
