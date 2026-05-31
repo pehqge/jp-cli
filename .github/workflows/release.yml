@@ -34,8 +34,10 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          # macOS Apple Silicon (arm64). Intel-mac binaries are intentionally
+          # not built (the macos-13 runner queue is unreliable); Intel Macs can
+          # still install via pip/pipx/uv or run the jp.pyz zipapp.
           - { os: macos-14, name: macos-arm64 }
-          - { os: macos-13, name: macos-x86_64 }
           - { os: ubuntu-latest, name: linux-x86_64 }
           - { os: windows-latest, name: windows-x86_64 }
     runs-on: ${{ matrix.os }}

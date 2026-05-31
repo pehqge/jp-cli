@@ -18,7 +18,14 @@ case "$os" in
   Darwin)
     case "$arch" in
       arm64)  asset="jp-macos-arm64" ;;
-      x86_64) asset="jp-macos-x86_64" ;;
+      x86_64)
+        echo "jp: no standalone binary is published for Intel Macs." >&2
+        echo "    Install with pipx or uv instead:" >&2
+        echo "      pipx install jp-cli      # or: uv tool install jp-cli" >&2
+        echo "    Or run the single-file zipapp (needs Python 3.9+):" >&2
+        echo "      curl -fsSL https://github.com/pehqge/jp-cli/releases/latest/download/jp.pyz -o jp.pyz && python3 jp.pyz --help" >&2
+        exit 1
+        ;;
       *) echo "jp: unsupported macOS architecture: $arch" >&2; exit 1 ;;
     esac
     ;;
