@@ -24,6 +24,24 @@ from jp.ignore import IgnoreSet  # noqa: E402
 from jp.index import Index  # noqa: E402
 
 
+@pytest.fixture(autouse=True)
+def _isolate_user_config(tmp_path, monkeypatch):
+    """Isolate every test from the real ``~/.config/jp`` credential store.
+
+    ``os.path.expanduser("~")`` resolves via ``USERPROFILE`` on Windows and
+    ``HOME`` elsewhere, so both are pointed at ``tmp_path``. Env tokens are
+    cleared too, so a developer's ``JP_TOKEN`` never bleeds into a test run.
+
+    Without this, a credential written by one test lands in the runner's real
+    profile and trips later tests -- the Windows-only "credential already
+    exists" / "multiple saved credentials" failures seen in CI.
+    """
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("USERPROFILE", str(tmp_path))
+    monkeypatch.delenv("JP_TOKEN", raising=False)
+    monkeypatch.delenv("JP_TOKEN_FILE", raising=False)
+
+
 class FakeApi:
     """In-memory stand-in for jp.api.Api.
 
