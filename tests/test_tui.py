@@ -1,0 +1,122 @@
+"""Interactive TUI logic, driven by scripted key streams (no real terminal)."""
+
+from __future__ import annotations
+
+import pytest
+
+from jp import tui
+
+
+class FakeReader:
+    """A context manager yielding scripted keys, standing in for the raw reader."""
+
+    def __init__(self, keys):
+        self._keys = list(keys)
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        return None
+
+    def read_key(self) -> str:
+        if self._keys:
+            return self._keys.pop(0)
+        return ""  # EOF -> treated as cancel/esc
+
+
+def _bool_setting(value=False):
+    return tui.Setting("mirror", "Mirror mode", value, options=[False, True], help_text="help here")
+
+
+# --- Setting --------------------------------------------------------------
+def test_setting_cycle_bool():
+    s = _bool_setting(False)
+    assert s.display() == "false"
+    s.cycle()
+    assert s.value is True
+    assert s.changed is True
+    s.cycle()
+    assert s.value is False
+    assert s.changed is False  # back to original
+
+
+def test_setting_cycle_enum():
+    s = tui.Setting("color", "Color", "auto", options=["auto", "always", "never"])
+    s.cycle()
+    assert s.value == "always"
+    s.cycle(-1)
+    assert s.value == "auto"
+
+
+# --- settings_menu --------------------------------------------------------
+def test_menu_toggle_and_save():
+    s = _bool_setting(False)
+    result = tui.settings_menu([s], _reader=FakeReader(["space", "enter"]))
+    assert result is not None
+    assert s.value is True
+
+
+def test_menu_cancel_returns_none():
+    s = _bool_setting(False)
+    result = tui.settings_menu([s], _reader=FakeReader(["space", "esc"]))
+    assert result is None  # cancel; caller discards mutated values
+
+
+def test_menu_navigation_down_then_toggle():
+    a = tui.Setting("a", "A", False, options=[False, True])
+    b = tui.Setting("b", "B", False, options=[False, True])
+    tui.settings_menu([a, b], _reader=FakeReader(["down", "space", "enter"]))
+    assert a.value is False
+    assert b.value is True
+
+
+def test_menu_search_filters_then_toggles():
+    a = tui.Setting("mirror", "Mirror mode", False, options=[False, True])
+    b = tui.Setting("color", "Colored output", "auto", options=["auto", "never"])
+    keys = ["/", "c", "o", "l", "enter", "space", "enter"]
+    tui.settings_menu([a, b], _reader=FakeReader(keys))
+    assert a.value is False  # untouched
+    assert b.value == "never"
+
+
+def test_menu_requires_terminal_without_reader(monkeypatch):
+    monkeypatch.setattr(tui, "interactive", lambda *a, **k: False)
+    with pytest.raises(RuntimeError):
+        tui.settings_menu([_bool_setting()])
+
+
+# --- confirm_deletions (mirror-mode safety) -------------------------------
+def test_confirm_default_keeps_everything_on_enter():
+    # No toggles -> everything stays "keep" -> nothing returned for deletion.
+    sel = tui.confirm_deletions(["a.txt", "b.txt"], "remote", _reader=FakeReader(["enter"]))
+    assert sel == []
+
+
+def test_confirm_toggle_one_then_enter():
+    sel = tui.confirm_deletions(
+        ["a.txt", "b.txt"], "remote", _reader=FakeReader(["space", "enter"])
+    )
+    assert sel == ["a.txt"]  # only the focused (first) item marked
+
+
+def test_confirm_delete_all():
+    sel = tui.confirm_deletions(["a.txt", "b.txt"], "local", _reader=FakeReader(["a", "enter"]))
+    assert sel == ["a.txt", "b.txt"]
+
+
+def test_confirm_none_after_marking():
+    # 'n' clears all marks -> deletes nothing even after toggling.
+    sel = tui.confirm_deletions(
+        ["a.txt", "b.txt"], "remote", _reader=FakeReader(["space", "n", "enter"])
+    )
+    assert sel == []
+
+
+def test_confirm_esc_cancels_keeps_all():
+    sel = tui.confirm_deletions(["a.txt"], "remote", _reader=FakeReader(["space", "esc"]))
+    assert sel == []  # esc cancels -> delete nothing
+
+
+def test_confirm_empty_returns_empty():
+    assert tui.confirm_deletions([], "remote") == []
