@@ -17,13 +17,32 @@ from __future__ import annotations
 import argparse
 
 from .. import config as config_mod
-from .. import tui, ui
+from .. import credentials, tui, ui
 from ..errors import EXIT_OK, UsageError
 from ..settings_schema import BY_KEY, SPECS
 from ._context import load_repo
 
 # Connection fields shown as read-only context above the editable settings.
-_CONNECTION_KEYS = ("base_url", "prefix", "token_path")
+_CONNECTION_KEYS = ("base_url", "prefix", "credential", "token_path")
+
+
+def _token_source(cfg: config_mod.Config, root: object) -> str:
+    """Human-readable description of where this workspace's token comes from.
+
+    Prefers the named credential (the modern path); falls back to a direct
+    ``token_path`` in the config; otherwise reports that none is configured.
+    Never prints the token value itself -- only its name/location.
+    """
+    if cfg.credential:
+        from pathlib import Path
+
+        cred = credentials.resolve(cfg.credential, Path(str(root)))
+        if cred is not None:
+            return f"{cfg.credential} ({cred.scope}: {cred.token_path})"
+        return f"{cfg.credential} (not found -- run 'jp login --name {cfg.credential}')"
+    if cfg.token_path:
+        return cfg.token_path
+    return "(unset -- run 'jp login')"
 
 
 def add_parser(subparsers: argparse._SubParsersAction) -> None:
@@ -81,8 +100,9 @@ def run(args: argparse.Namespace) -> int:
 
     # Connection context (read-only here; change via 'jp config set').
     ui.heading(f"jp workspace: {ctx.root}")
-    for key in _CONNECTION_KEYS:
-        ui.detail(f"  {key} = {getattr(cfg, key, '') or '(unset)'}")
+    ui.detail(f"  base_url = {cfg.base_url or '(unset)'}")
+    ui.detail(f"  prefix   = {cfg.prefix or '(unset)'}")
+    ui.detail(f"  token    = {_token_source(cfg, ctx.root)}")
     ui.info("")
 
     rows = [

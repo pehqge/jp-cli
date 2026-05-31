@@ -17,6 +17,7 @@ single printable character, or ``""`` at end-of-input.
 from __future__ import annotations
 
 import os
+import re
 import sys
 from collections.abc import Callable, Iterable, Sequence
 
@@ -70,7 +71,73 @@ def _clear_lines(n: int) -> None:
     """Move the cursor up ``n`` lines and clear from there to end of screen."""
     if n > 0:
         _w(f"{_CSI}{n}A")
+    _w("\r")  # also return to column 0 (raw mode leaves it where it was)
     _w(f"{_CSI}0J")  # clear from cursor to end of screen
+
+
+_ANSI_RE = re.compile(r"\x1b\[[0-9;?]*[A-Za-z]")
+
+
+def _visible_len(s: str) -> int:
+    """Length of ``s`` ignoring ANSI escape sequences (zero display width)."""
+    return len(_ANSI_RE.sub("", s))
+
+
+def _term_cols() -> int:
+    try:
+        return os.get_terminal_size().columns
+    except OSError:
+        return 80
+
+
+def _wrap_ansi(line: str, width: int) -> list[str]:
+    """Split ``line`` into physical rows of at most ``width`` visible columns,
+    keeping ANSI escape sequences intact (they take zero columns)."""
+    if width <= 0 or _visible_len(line) <= width:
+        return [line]
+    out: list[str] = []
+    cur = ""
+    col = 0
+    i = 0
+    n = len(line)
+    while i < n:
+        m = _ANSI_RE.match(line, i)
+        if m:
+            cur += m.group()
+            i = m.end()
+            continue
+        cur += line[i]
+        col += 1
+        i += 1
+        if col >= width:
+            out.append(cur)
+            cur = ""
+            col = 0
+    if cur or not out:
+        out.append(cur)
+    return out
+
+
+def _render_block(lines: list[str], prev_lines: int) -> int:
+    """Repaint a block of logical ``lines`` in place, returning the number of
+    physical terminal rows written (pass it back as ``prev_lines`` next time).
+
+    Two rendering hazards are handled here, both caused by raw terminal mode
+    (``tty.setraw`` clears ``OPOST``, so the terminal does no output
+    post-processing): a bare ``\\n`` moves the cursor down but NOT to column 0,
+    and a logical line longer than the terminal wraps onto extra physical rows.
+    We therefore emit explicit ``\\r\\n`` between rows and pre-wrap each logical
+    line to the terminal width so the physical-row count stays exact -- which is
+    what ``_clear_lines`` relies on to erase the previous frame cleanly.
+    """
+    cols = _term_cols()
+    phys: list[str] = []
+    for ln in lines:
+        phys.extend(_wrap_ansi(ln, cols))
+    _clear_lines(prev_lines)
+    _w("\r" + "\r\n".join(phys) + "\r\n")
+    sys.stdout.flush()
+    return len(phys)
 
 
 # --------------------------------------------------------------------------- #
@@ -279,17 +346,21 @@ def settings_menu(
         if show_help and vis:
             s = rows[vis[idx]]
             lines.append(f"{DIM}{s.help_text or '(no description)'}{RESET}")
+            lines.append("")
+            lines.append(
+                f"{DIM}i hide info · Up/Down move · Space change · / search · "
+                f"Enter save · Esc cancel{RESET}"
+            )
         elif searching:
-            lines.append(f"{CYAN}/{query}{RESET}{DIM}  (type to filter, Enter to apply){RESET}")
+            lines.append(f"{CYAN}/{query}{RESET}{DIM}  (type to filter){RESET}")
+            lines.append("")
+            lines.append(f"{DIM}Enter apply · Esc cancel search{RESET}")
         else:
             lines.append(
                 f"{DIM}Up/Down move · Space change · i info · / search · "
                 f"Enter save · Esc cancel{RESET}"
             )
-        _clear_lines(prev_lines)
-        _w("\r" + "\n".join(lines) + "\n")
-        sys.stdout.flush()
-        prev_lines = len(lines)
+        prev_lines = _render_block(lines, prev_lines)
         return len(vis)
 
     _hide_cursor()
@@ -372,10 +443,7 @@ def select_one(labels: Sequence[str], title: str = "", _reader: object | None = 
             lines.append(f"{cursor}{color}{label}{end}")
         lines.append("")
         lines.append(f"{DIM}Up/Down move · Enter select · Esc cancel{RESET}")
-        _clear_lines(prev_lines)
-        _w("\r" + "\n".join(lines) + "\n")
-        sys.stdout.flush()
-        prev_lines = len(lines)
+        prev_lines = _render_block(lines, prev_lines)
 
     _hide_cursor()
     try:
@@ -439,10 +507,7 @@ def confirm_deletions(paths: Iterable[str], where: str, _reader: object | None =
             f"{DIM}Up/Down move · Space toggle · a delete-all · n keep-all · "
             f"Enter confirm ({ndel} to delete) · Esc cancel{RESET}"
         )
-        _clear_lines(prev_lines)
-        _w("\r" + "\n".join(lines) + "\n")
-        sys.stdout.flush()
-        prev_lines = len(lines)
+        prev_lines = _render_block(lines, prev_lines)
 
     _hide_cursor()
     try:
