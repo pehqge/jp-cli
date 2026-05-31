@@ -3,9 +3,9 @@
 Works across the install methods jp supports, by detecting which tool owns the
 running ``jp`` and delegating its upgrade:
 
-  * pipx   -> ``pipx upgrade jp-cli``       (or reinstall from GitHub)
-  * uv     -> ``uv tool upgrade jp-cli``
-  * pip    -> ``python -m pip install --upgrade jp-cli``
+  * pipx   -> ``pipx upgrade jpsync``       (or reinstall from GitHub)
+  * uv     -> ``uv tool upgrade jpsync``
+  * pip    -> ``python -m pip install --upgrade jpsync``
   * a standalone binary / zipapp -> we can't self-replace safely, so we print
     the one-line reinstall command for the user's OS.
 
@@ -27,8 +27,8 @@ import urllib.request
 from .. import __version__, ui
 from ..errors import EXIT_GENERIC, EXIT_NETWORK, EXIT_OK
 
-_REPO = "pehqge/jp-cli"
-_PYPI_NAME = "jp-cli"
+_REPO = "pehqge/jpsync"
+_PYPI_NAME = "jpsync"
 _GIT_SPEC = f"git+https://github.com/{_REPO}"
 
 

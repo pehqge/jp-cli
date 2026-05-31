@@ -2,13 +2,13 @@
 # jp installer for macOS and Linux.
 #
 # Usage:
-#   curl -fsSL https://raw.githubusercontent.com/pehqge/jp-cli/main/scripts/install.sh | sh
+#   curl -fsSL https://raw.githubusercontent.com/pehqge/jpsync/main/scripts/install.sh | sh
 #
 # Downloads the standalone `jp` binary for your platform from the latest GitHub
 # release and installs it to ~/.local/bin (override with JP_BIN_DIR).
 set -eu
 
-REPO="pehqge/jp-cli"
+REPO="pehqge/jpsync"
 BIN_DIR="${JP_BIN_DIR:-$HOME/.local/bin}"
 
 os="$(uname -s)"
@@ -21,9 +21,9 @@ case "$os" in
       x86_64)
         echo "jp: no standalone binary is published for Intel Macs." >&2
         echo "    Install with pipx or uv instead:" >&2
-        echo "      pipx install jp-cli      # or: uv tool install jp-cli" >&2
+        echo "      pipx install jpsync      # or: uv tool install jpsync" >&2
         echo "    Or run the single-file zipapp (needs Python 3.9+):" >&2
-        echo "      curl -fsSL https://github.com/pehqge/jp-cli/releases/latest/download/jp.pyz -o jp.pyz && python3 jp.pyz --help" >&2
+        echo "      curl -fsSL https://github.com/pehqge/jpsync/releases/latest/download/jp.pyz -o jp.pyz && python3 jp.pyz --help" >&2
         exit 1
         ;;
       *) echo "jp: unsupported macOS architecture: $arch" >&2; exit 1 ;;
@@ -36,7 +36,7 @@ case "$os" in
     esac
     ;;
   *)
-    echo "jp: unsupported OS: $os (try: pipx install jp-cli)" >&2
+    echo "jp: unsupported OS: $os (try: pipx install jpsync)" >&2
     exit 1
     ;;
 esac
@@ -48,7 +48,7 @@ mkdir -p "$BIN_DIR"
 tmp="$(mktemp)"
 if ! curl -fsSL "$url" -o "$tmp"; then
   echo "jp: download failed from $url" >&2
-  echo "    The release may not include a binary yet. Try: pipx install jp-cli" >&2
+  echo "    The release may not include a binary yet. Try: pipx install jpsync" >&2
   rm -f "$tmp"
   exit 1
 fi

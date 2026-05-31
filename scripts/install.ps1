@@ -1,14 +1,14 @@
 # jp installer for Windows (PowerShell).
 #
 # Usage:
-#   powershell -ExecutionPolicy ByPass -c "irm https://raw.githubusercontent.com/pehqge/jp-cli/main/scripts/install.ps1 | iex"
+#   powershell -ExecutionPolicy ByPass -c "irm https://raw.githubusercontent.com/pehqge/jpsync/main/scripts/install.ps1 | iex"
 #
 # Downloads the standalone jp.exe from the latest GitHub release and installs it
 # to %LOCALAPPDATA%\jp\bin, adding that directory to the user PATH.
 
 $ErrorActionPreference = "Stop"
 
-$Repo   = "pehqge/jp-cli"
+$Repo   = "pehqge/jpsync"
 $BinDir = Join-Path $env:LOCALAPPDATA "jp\bin"
 $Asset  = "jp-windows-x86_64.exe"
 $Url    = "https://github.com/$Repo/releases/latest/download/$Asset"
@@ -19,7 +19,7 @@ New-Item -ItemType Directory -Force -Path $BinDir | Out-Null
 try {
     Invoke-WebRequest -Uri $Url -OutFile (Join-Path $BinDir "jp.exe")
 } catch {
-    Write-Error "jp: download failed from $Url. The release may not include a binary yet. Try: pipx install jp-cli"
+    Write-Error "jp: download failed from $Url. The release may not include a binary yet. Try: pipx install jpsync"
     exit 1
 }
 

@@ -17,7 +17,7 @@ try:  # Prefer the installed distribution's version when present.
     from importlib.metadata import version as _version
 
     with contextlib.suppress(PackageNotFoundError):
-        __version__ = _version("jp")
+        __version__ = _version("jpsync")
     del _version, PackageNotFoundError
 except Exception:  # pragma: no cover - importlib.metadata always present on 3.8+
     pass

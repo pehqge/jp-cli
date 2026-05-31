@@ -5,56 +5,56 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.3.1](https://github.com/pehqge/jp-cli/compare/v0.3.0...v0.3.1) (2026-05-31)
+## [0.3.1](https://github.com/pehqge/jpsync/compare/v0.3.0...v0.3.1) (2026-05-31)
 
 
 ### Bug Fixes
 
-* **readme:** use shields static/v1 badge so release-please can't eat the color ([7c9377b](https://github.com/pehqge/jp-cli/commit/7c9377b860b5f75942a93c662b7bdab5b7afa83f))
-* **update:** detect editable installs instead of faking a successful upgrade ([d12722b](https://github.com/pehqge/jp-cli/commit/d12722b47d9ba6192198c1062e01502f4d87be22))
+* **readme:** use shields static/v1 badge so release-please can't eat the color ([7c9377b](https://github.com/pehqge/jpsync/commit/7c9377b860b5f75942a93c662b7bdab5b7afa83f))
+* **update:** detect editable installs instead of faking a successful upgrade ([d12722b](https://github.com/pehqge/jpsync/commit/d12722b47d9ba6192198c1062e01502f4d87be22))
 
-## [0.3.0](https://github.com/pehqge/jp-cli/compare/v0.2.0...v0.3.0) (2026-05-31)
+## [0.3.0](https://github.com/pehqge/jpsync/compare/v0.2.0...v0.3.0) (2026-05-31)
 
 
 ### Features
 
-* **kernel:** add --link, fix docs, print privacy verdict ([13d42ca](https://github.com/pehqge/jp-cli/commit/13d42cab82df2463d444c5387da59609e8a84e12))
-* **kernel:** add `jp kernel` to fix VS Code remote-kernel cwd ([7ba887c](https://github.com/pehqge/jp-cli/commit/7ba887c782d7cdf341e262fbd398609d8e7d0864))
+* **kernel:** add --link, fix docs, print privacy verdict ([13d42ca](https://github.com/pehqge/jpsync/commit/13d42cab82df2463d444c5387da59609e8a84e12))
+* **kernel:** add `jp kernel` to fix VS Code remote-kernel cwd ([7ba887c](https://github.com/pehqge/jpsync/commit/7ba887c782d7cdf341e262fbd398609d8e7d0864))
 
 
 ### Bug Fixes
 
-* **credentials:** skip world-readable warning on Windows ([44fa06a](https://github.com/pehqge/jp-cli/commit/44fa06a4af1b9f3983bfaad12e1a9380257f36c9))
-* **readme:** use a static release badge auto-bumped by release-please ([1176d07](https://github.com/pehqge/jp-cli/commit/1176d07d4885562db9dd2f4fb9ccfab9128a97ee))
-* **tests:** isolate Windows home dir and simplify release badge ([9eeb6ac](https://github.com/pehqge/jp-cli/commit/9eeb6acbd7931ee30384b6c74dd9c3214805e425))
-* **tests:** keep USERPROFILE comment within ruff line-length ([86f3d68](https://github.com/pehqge/jp-cli/commit/86f3d68fea3614e930a1d06278ba11017f8d02bb))
+* **credentials:** skip world-readable warning on Windows ([44fa06a](https://github.com/pehqge/jpsync/commit/44fa06a4af1b9f3983bfaad12e1a9380257f36c9))
+* **readme:** use a static release badge auto-bumped by release-please ([1176d07](https://github.com/pehqge/jpsync/commit/1176d07d4885562db9dd2f4fb9ccfab9128a97ee))
+* **tests:** isolate Windows home dir and simplify release badge ([9eeb6ac](https://github.com/pehqge/jpsync/commit/9eeb6acbd7931ee30384b6c74dd9c3214805e425))
+* **tests:** keep USERPROFILE comment within ruff line-length ([86f3d68](https://github.com/pehqge/jpsync/commit/86f3d68fea3614e930a1d06278ba11017f8d02bb))
 
 
 ### Documentation
 
-* fix jp login flow to match actual behavior ([c378c4e](https://github.com/pehqge/jp-cli/commit/c378c4e7538632155a17fd1d70a28901fe7fac40))
-* fix two more stale README details ([1fefd67](https://github.com/pehqge/jp-cli/commit/1fefd6719a35457f374ffc33d7ec3ad244910781))
-* **readme:** add FAQ entry for the VS Code remote-kernel workflow ([d4e0436](https://github.com/pehqge/jp-cli/commit/d4e043644df21357d39156964954a164c68d3cfa))
+* fix jp login flow to match actual behavior ([c378c4e](https://github.com/pehqge/jpsync/commit/c378c4e7538632155a17fd1d70a28901fe7fac40))
+* fix two more stale README details ([1fefd67](https://github.com/pehqge/jpsync/commit/1fefd6719a35457f374ffc33d7ec3ad244910781))
+* **readme:** add FAQ entry for the VS Code remote-kernel workflow ([d4e0436](https://github.com/pehqge/jpsync/commit/d4e043644df21357d39156964954a164c68d3cfa))
 
-## [0.2.0](https://github.com/pehqge/jp-cli/compare/v0.1.0...v0.2.0) (2026-05-31)
+## [0.2.0](https://github.com/pehqge/jpsync/compare/v0.1.0...v0.2.0) (2026-05-31)
 
 
 ### Features
 
-* **config:** activate color setting and add dotfile "protect" policy ([38c9ac7](https://github.com/pehqge/jp-cli/commit/38c9ac7ebe963156e0eb92015ec98c147d617a00))
-* named credentials with interactive jp login ([ec290db](https://github.com/pehqge/jp-cli/commit/ec290db9233c427a7150ecebb3cfad836d4b0e68))
+* **config:** activate color setting and add dotfile "protect" policy ([38c9ac7](https://github.com/pehqge/jpsync/commit/38c9ac7ebe963156e0eb92015ec98c147d617a00))
+* named credentials with interactive jp login ([ec290db](https://github.com/pehqge/jpsync/commit/ec290db9233c427a7150ecebb3cfad836d4b0e68))
 
 
 ### Bug Fixes
 
-* add top-level release-type to release-please config ([695d456](https://github.com/pehqge/jp-cli/commit/695d456d42511a371a33bad1d3e327af61c45b88))
-* tag releases as vX.Y.Z without component prefix ([c2e9794](https://github.com/pehqge/jp-cli/commit/c2e9794065feb93f13afa24a947f5db26bae820c))
-* **tui:** repair interactive settings render and add navigation hints ([0e6b673](https://github.com/pehqge/jp-cli/commit/0e6b673ab1bab1ad4e396679b1874b1284b93cf7))
+* add top-level release-type to release-please config ([695d456](https://github.com/pehqge/jpsync/commit/695d456d42511a371a33bad1d3e327af61c45b88))
+* tag releases as vX.Y.Z without component prefix ([c2e9794](https://github.com/pehqge/jpsync/commit/c2e9794065feb93f13afa24a947f5db26bae820c))
+* **tui:** repair interactive settings render and add navigation hints ([0e6b673](https://github.com/pehqge/jpsync/commit/0e6b673ab1bab1ad4e396679b1874b1284b93cf7))
 
 
 ### Documentation
 
-* replace real JupyterHub URL with generic example placeholder ([54612b7](https://github.com/pehqge/jp-cli/commit/54612b7e269d8e8f2c1e4757c6427aeaec625314))
+* replace real JupyterHub URL with generic example placeholder ([54612b7](https://github.com/pehqge/jpsync/commit/54612b7e269d8e8f2c1e4757c6427aeaec625314))
 
 ## [Unreleased]
 
@@ -83,7 +83,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- Initial release of `jp` (PyPI package `jp-cli`, command `jp`).
+- Initial release of `jp` (PyPI package `jpsync`, command `jp`).
 - Git-like commands: `clone`, `pull`, `push`, `status`, `diff`, `init`,
   `config`, `auth`, `version`.
 - Three-way sync model (local / remote / base) with conflict detection.
@@ -102,5 +102,5 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Distribution via PyPI, a single-file `jp.pyz` zipapp, standalone per-OS
   PyInstaller binaries, and `install.sh` / `install.ps1` installers.
 
-[Unreleased]: https://github.com/pehqge/jp-cli/compare/v0.1.0...HEAD
-[0.1.0]: https://github.com/pehqge/jp-cli/releases/tag/v0.1.0
+[Unreleased]: https://github.com/pehqge/jpsync/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/pehqge/jpsync/releases/tag/v0.1.0

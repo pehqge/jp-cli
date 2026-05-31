@@ -23,7 +23,7 @@ By participating, you agree to abide by our
 mode with the dev extras:
 
 ```bash
-git clone https://github.com/pehqge/jp-cli
+git clone https://github.com/pehqge/jpsync
 cd jp
 
 python -m venv .venv
