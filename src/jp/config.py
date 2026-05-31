@@ -44,8 +44,9 @@ class Config:
     # and not the other -- but ALWAYS interactively, file by file, defaulting to
     # keep. Off by default; deletion is never silent. See docs/architecture.md.
     mirror: bool = False
-    # Colored output: auto (tty only) | always | never.
-    color: str = "auto"
+    # Colored output: auto (tty only) | always | never. Defaults to "always"
+    # so jp is colorful out of the box; NO_COLOR / --no-color still override it.
+    color: str = "always"
     extra: dict[str, Any] = field(default_factory=dict)
 
     @property
@@ -98,15 +99,18 @@ class Config:
             timeout = float(data.get("timeout", 30.0))
         except (TypeError, ValueError):
             timeout = 30.0
-        color = str(data.get("color", "auto"))
+        color = str(data.get("color", "always"))
         if color not in ("auto", "always", "never"):
-            color = "auto"
+            color = "always"
+        dotfiles = str(data.get("dotfiles", "skip")).strip().lower() or "skip"
+        if dotfiles not in ("skip", "protect"):
+            dotfiles = "skip"
         cfg = cls(
             base_url=base_url.rstrip("/"),
             prefix=prefix,
             token_path=str(data.get("token_path", "")),
             credential=str(data.get("credential", "")),
-            dotfiles=str(data.get("dotfiles", "skip")) or "skip",
+            dotfiles=dotfiles,
             timeout=timeout,
             mirror=bool(data.get("mirror", False)),
             color=color,

@@ -48,13 +48,16 @@ SPECS: tuple[SettingSpec, ...] = (
     SettingSpec(
         key="dotfiles",
         label="Dotfile policy",
-        options=("skip",),
+        options=("skip", "protect"),
         help_text=(
-            "How to handle hidden files (names starting with a dot). The UFSC "
-            "server rejects hidden uploads (allow_hidden=False), so 'skip' is the "
-            "only supported policy: dotfiles are reported and never uploaded."
+            "How to handle hidden files (names starting with a dot). The Jupyter "
+            "server runs with allow_hidden=False and rejects hidden uploads, so a "
+            "dotfile cannot be stored under its real name. 'skip' (default, safest) "
+            "reports dotfiles and never uploads them. 'protect' uploads them under "
+            "a reversible alias (e.g. '.gitignore' -> '__jpdot__1_gitignore') and "
+            "restores the real name on pull, so hidden files round-trip."
         ),
-        coerce=lambda s: str(s).strip() or "skip",
+        coerce=lambda s: str(s).strip().lower() or "skip",
     ),
     SettingSpec(
         key="color",

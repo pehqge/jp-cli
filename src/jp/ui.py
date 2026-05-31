@@ -85,11 +85,27 @@ def redact(text: object) -> str:
 # --- color handling ---------------------------------------------------------
 
 
+# Process-global color mode set from the workspace config ("auto"|"always"|
+# "never"). Defaults to "auto" until a command loads its config. Environment
+# (NO_COLOR / JP_NO_COLOR / --no-color) always overrides it.
+_color_mode = "auto"
+
+
+def set_color_mode(mode: str) -> None:
+    """Set the color policy: 'auto' (tty only), 'always', or 'never'."""
+    global _color_mode
+    _color_mode = mode if mode in ("auto", "always", "never") else "auto"
+
+
 def _color_enabled(stream: object) -> bool:
     if os.environ.get("NO_COLOR") is not None:
         return False
     if os.environ.get("JP_NO_COLOR") is not None:
         return False
+    if _color_mode == "never":
+        return False
+    if _color_mode == "always":
+        return True
     return bool(getattr(stream, "isatty", lambda: False)())
 
 

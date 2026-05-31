@@ -78,12 +78,12 @@ def test_api_refuses_token_over_http():
 def test_config_roundtrips_credential_name(tmp_path):
     root = tmp_path / "r"
     root.mkdir()
-    cfg = Config(base_url="https://h/api", prefix="users/alice", credential="ufsc")
+    cfg = Config(base_url="https://h/api", prefix="users/alice", credential="myserver")
     config_mod.save(root, cfg)
     raw = json.loads((root / ".jp" / "config.json").read_text())
-    assert raw["credential"] == "ufsc"
+    assert raw["credential"] == "myserver"
     assert "token" not in raw  # still no token value
-    assert config_mod.load(root).credential == "ufsc"
+    assert config_mod.load(root).credential == "myserver"
 
 
 def test_load_token_resolves_recorded_credential(tmp_path, monkeypatch):
@@ -92,9 +92,52 @@ def test_load_token_resolves_recorded_credential(tmp_path, monkeypatch):
     monkeypatch.setenv("HOME", str(tmp_path))
     monkeypatch.delenv("JP_TOKEN", raising=False)
     monkeypatch.delenv("JP_TOKEN_FILE", raising=False)
-    credentials.add("ufsc", "CREDTOKENVALUE1234567890", scope="global")
+    credentials.add("myserver", "CREDTOKENVALUE1234567890", scope="global")
     root = tmp_path / "r"
     root.mkdir()
-    config_mod.save(root, Config(base_url="https://h/api", prefix="users/alice", credential="ufsc"))
+    config_mod.save(
+        root, Config(base_url="https://h/api", prefix="users/alice", credential="myserver")
+    )
     cfg = config_mod.load(root)
     assert config_mod.load_token(cfg) == "CREDTOKENVALUE1234567890"
+
+
+def test_color_defaults_to_always():
+    assert Config(base_url="https://h/api", prefix="users/alice").color == "always"
+    cfg = Config.from_json({"base_url": "https://h/api", "prefix": "users/alice"})
+    assert cfg.color == "always"
+
+
+def test_color_invalid_value_falls_back_to_always():
+    cfg = Config.from_json({"base_url": "https://h/api", "prefix": "users/alice", "color": "neon"})
+    assert cfg.color == "always"
+
+
+@pytest.mark.parametrize(
+    "raw,expected",
+    [
+        ("skip", "skip"),
+        ("protect", "protect"),
+        ("PROTECT", "protect"),
+        ("bogus", "skip"),
+        ("", "skip"),
+    ],
+)
+def test_dotfiles_policy_validation(raw, expected):
+    cfg = Config.from_json({"base_url": "https://h/api", "prefix": "users/alice", "dotfiles": raw})
+    assert cfg.dotfiles == expected
+
+
+def test_color_mode_always_forces_color_off_tty():
+    import io
+
+    ui.set_color_mode("always")
+    try:
+        buf = io.StringIO()  # not a tty
+        assert ui._color_enabled(buf) is True
+        ui.set_color_mode("never")
+        assert ui._color_enabled(buf) is False
+        ui.set_color_mode("auto")
+        assert ui._color_enabled(buf) is False  # not a tty
+    finally:
+        ui.set_color_mode("auto")

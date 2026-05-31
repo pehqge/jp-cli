@@ -28,6 +28,7 @@ from __future__ import annotations
 import contextlib
 import os
 import posixpath
+import re
 import unicodedata
 from pathlib import Path, PurePosixPath
 
@@ -50,9 +51,10 @@ _WIN_RESERVED = {
 }
 
 # Prefixes we refuse to operate on: too broad / shared spaces (see docs/architecture.md).
-# "compartilhado" and "lapix" are the real shared roots on the UFSC server; a
-# user (or a tampered .jp/config) pointing a workspace there could damage another
-# lab's data, so they are refused as ANY path segment, not just the first.
+# These are common names for multi-user shared roots ("compartilhado" is Portuguese
+# for "shared", "lapix" is a shared-lab directory); a user (or a tampered
+# .jp/config) pointing a workspace there could damage another group's data, so they
+# are refused as ANY path segment, not just the first.
 _FORBIDDEN_PREFIXES = {
     "",
     ".",
@@ -143,6 +145,55 @@ def is_hidden(rel: str) -> bool:
     """
     norm = rel.replace("\\", "/")
     return any(part.startswith(".") for part in norm.split("/") if part)
+
+
+# --------------------------------------------------------------------------- #
+# Dotfile "protect" encoding
+# --------------------------------------------------------------------------- #
+# The server runs with allow_hidden=False and rejects any name starting with a
+# dot. Under the "protect" dotfile policy, jp stores a hidden segment under a
+# reversible, server-safe alias so the file can still be uploaded -- and restores
+# the real name on pull. ".foo" <-> "__jpdot__1_foo"; the leading digit records
+# how many dots were stripped so "..foo" <-> "__jpdot__2_foo" round-trips too.
+#
+# Trade-off: a real (non-hidden) file literally named like the alias (e.g.
+# "__jpdot__1_foo") would be decoded back to ".foo" on pull. The marker is
+# deliberately distinctive to make that collision unlikely; it is documented.
+_DOT_MARKER = "__jpdot__"
+_DOT_ENC_RE = re.compile(r"^__jpdot__(\d+)_(.*)$", re.DOTALL)
+
+
+def _encode_segment(seg: str) -> str:
+    if not seg.startswith("."):
+        return seg
+    n = len(seg) - len(seg.lstrip("."))
+    return f"{_DOT_MARKER}{n}_{seg[n:]}"
+
+
+def _decode_segment(seg: str) -> str:
+    m = _DOT_ENC_RE.match(seg)
+    if not m:
+        return seg
+    return "." * int(m.group(1)) + m.group(2)
+
+
+def encode_protected(rel: str) -> str:
+    """Map a (possibly hidden) relative path to its server-safe encoded form.
+
+    Non-hidden segments pass through unchanged, so this is safe to apply to any
+    path when the protect policy is active.
+    """
+    return "/".join(_encode_segment(p) for p in rel.split("/") if p != "")
+
+
+def decode_protected(rel: str) -> str:
+    """Inverse of :func:`encode_protected`: restore real (dotted) names."""
+    return "/".join(_decode_segment(p) for p in rel.split("/") if p != "")
+
+
+def is_protected_encoded(rel: str) -> bool:
+    """True if any segment is a protect-encoded dotfile alias."""
+    return any(_DOT_ENC_RE.match(p) for p in rel.split("/") if p)
 
 
 # --------------------------------------------------------------------------- #

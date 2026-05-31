@@ -176,3 +176,41 @@ def test_push_unchanged_detected_by_hash_without_download(repo, cfg, fake_api, i
     # Decision used the cheap hash, never a body download.
     assert "users/alice/same.txt" in fake_api.hash_reads
     assert fake_api.content_reads == []
+
+
+def test_push_protect_uploads_dotfile_under_alias(repo, cfg, fake_api, index, ignore):
+    """With dotfiles='protect', a dotfile is uploaded under a server-safe alias
+    (never a dotted remote path) and the index keeps the real dotted name."""
+    from dataclasses import replace
+
+    pcfg = replace(cfg, dotfiles="protect")
+    write_file(repo, ".gitignore", b"node_modules\n")
+    write_file(repo, "keep.txt", b"x")
+    out = sync.push(repo, pcfg, fake_api, index, ignore)
+
+    assert ".gitignore" in out.transferred
+    assert out.skipped_hidden == []
+    assert fake_api.files["users/alice/__jpdot__1_gitignore"] == b"node_modules\n"
+    assert ".gitignore" in index  # canonical key is the real dotted name
+    # Never wrote a dotted remote path (the server would 400 it).
+    for _, p in fake_api.calls:
+        p = p.split("->", 1)[-1]
+        assert all(not seg.startswith(".") for seg in p.split("/"))
+
+
+def test_protect_roundtrip_restores_dotfile(repo, cfg, fake_api, index, ignore, tmp_path):
+    """A dotfile pushed under 'protect' is restored to its real name on pull."""
+    from dataclasses import replace
+
+    from jp.ignore import IgnoreSet
+    from jp.index import Index
+
+    pcfg = replace(cfg, dotfiles="protect")
+    write_file(repo, ".config/app.json", b'{"k":1}')
+    sync.push(repo, pcfg, fake_api, index, ignore)
+
+    dest = tmp_path / "clone"
+    dest.mkdir()
+    out = sync.pull(dest, pcfg, fake_api, Index.load(dest), IgnoreSet.from_root(dest))
+    assert ".config/app.json" in out.transferred
+    assert (dest / ".config/app.json").read_bytes() == b'{"k":1}'

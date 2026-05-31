@@ -66,7 +66,7 @@ def test_normalize_rel_accepts_safe(good, expected):
         "common/y",
         "..",
         "../x",
-        # The real UFSC shared roots must be refused as ANY segment, in any case.
+        # The real the server shared roots must be refused as ANY segment, in any case.
         "compartilhado",
         "Compartilhado",
         "lapix",
@@ -263,3 +263,31 @@ def test_is_hidden():
 def test_remote_tmp_dir_is_not_dotted():
     # Our remote temp dir must NOT start with a dot (server allow_hidden=False).
     assert not paths.REMOTE_TMP_DIR.startswith(".")
+
+
+# --- dotfile "protect" encoding -------------------------------------------
+@pytest.mark.parametrize(
+    "rel,enc",
+    [
+        (".gitignore", "__jpdot__1_gitignore"),
+        (".env.local", "__jpdot__1_env.local"),
+        ("..weird", "__jpdot__2_weird"),
+        (".config/app.json", "__jpdot__1_config/app.json"),
+        ("a/.hidden/b.txt", "a/__jpdot__1_hidden/b.txt"),
+        ("plain/file.txt", "plain/file.txt"),
+    ],
+)
+def test_protect_encode_decode_roundtrip(rel, enc):
+    assert paths.encode_protected(rel) == enc
+    assert paths.decode_protected(enc) == rel
+    # Encoded form is never hidden (server-safe) ...
+    assert not paths.is_hidden(enc)
+    # ... and is recognizable as an alias only when it actually encoded a dotfile.
+    assert paths.is_protected_encoded(enc) == (rel != enc)
+
+
+def test_protect_encode_is_identity_for_plain_paths():
+    for rel in ("a/b/c.txt", "file", "dir/sub/leaf"):
+        assert paths.encode_protected(rel) == rel
+        assert paths.decode_protected(rel) == rel
+        assert not paths.is_protected_encoded(rel)

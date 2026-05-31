@@ -32,6 +32,10 @@ def load_repo() -> RepoContext:
             "Run 'jp init' or 'jp clone' first."
         )
     cfg = config_mod.load(root)
+    # Apply the workspace color policy (env/--no-color still override it).
+    from .. import ui
+
+    ui.set_color_mode(cfg.color)
     index = Index.load(root)
     ignore = IgnoreSet.from_root(root)
     return RepoContext(root=root, cfg=cfg, index=index, ignore=ignore)

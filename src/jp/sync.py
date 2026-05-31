@@ -184,15 +184,25 @@ def _walk_remote(api: Api, prefix: str, api_path: str, acc: dict[str, RemoteEntr
         if entry.type == "directory":
             _walk_remote(api, prefix, entry.path, acc)
         elif rel:
-            # Re-validate the relative name is traversal-free, and skip hidden
-            # entries defensively (the server cannot serve them on pull anyway).
+            # Re-validate the relative name is traversal-free.
             try:
                 norm = paths.normalize_rel(rel)
             except JpError:
                 continue
+            # A genuinely hidden wire name cannot be served on pull anyway; skip
+            # it defensively. (Protect-encoded aliases are NOT hidden on the wire.)
             if paths.is_hidden(norm):
                 continue
-            acc[norm] = entry
+            # Decode protect aliases back to the canonical dotted key so they pair
+            # with the matching local dotfile in the diff; the entry keeps its
+            # encoded wire path for GET/hash. Decoding is policy-independent so
+            # switching skip<->protect never strands already-uploaded files.
+            key = paths.decode_protected(norm)
+            try:
+                key = paths.normalize_rel(key)
+            except JpError:
+                continue
+            acc[key] = entry
 
 
 # --------------------------------------------------------------------------- #
@@ -397,11 +407,16 @@ def push(
     outcome = Outcome()
     states = diff(root, cfg, api, index, ignore)
     created_dirs: set[str] = set()
+    # "protect" uploads dotfiles under a reversible server-safe alias; the default
+    # "skip" policy reports them and never uploads (the server rejects hidden names).
+    protect = cfg.dotfiles == "protect"
 
     for st in states:
         rel = st.rel
-        # Dotfiles: skip + report, NEVER abort the run (fixes the prototype bug).
-        if paths.is_hidden(rel):
+        # Dotfiles under the default "skip" policy: report + skip, NEVER abort the
+        # run (fixes the prototype bug). Under "protect" they fall through and are
+        # uploaded below under an encoded name.
+        if paths.is_hidden(rel) and not protect:
             if st.local_exists and st.change in (
                 Change.LOCAL_NEW,
                 Change.LOCAL_MODIFIED,
@@ -426,7 +441,11 @@ def push(
         try:
             lpath = root / rel
             data = lpath.read_bytes()
-            remote_path = paths.remote_path_for(prefix, rel)
+            # Under "protect", hidden segments are aliased to a server-safe name
+            # (non-hidden segments pass through unchanged); the index/outcome keep
+            # the real (dotted) rel as the canonical key.
+            wire_rel = paths.encode_protected(rel) if protect else rel
+            remote_path = paths.remote_path_for(prefix, wire_rel)
             _ensure_remote_dirs(api, prefix, remote_path, created_dirs)
             # SAFETY: assert immediately before the mutating call.
             paths.assert_within_prefix(remote_path, prefix)
