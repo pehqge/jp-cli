@@ -2,7 +2,10 @@ name: release-please
 
 # Maintains an always-open "release PR" that accumulates conventional-commit
 # changes on main, bumping the version + CHANGELOG automatically. Merging that
-# PR creates the vX.Y.Z tag, which triggers release.yml (build + GitHub Release).
+# PR creates the vX.Y.Z tag and, in this same run, calls release.yml to build
+# the artifacts + publish to PyPI. (A standalone "push: tags" trigger never
+# fires for tags created by GITHUB_TOKEN, so the build is invoked directly via
+# workflow_call instead.)
 
 on:
   push:
@@ -12,10 +15,14 @@ permissions:
   contents: write
   pull-requests: write
   statuses: write
+  id-token: write
 
 jobs:
   release-please:
     runs-on: ubuntu-latest
+    outputs:
+      release_created: ${{ steps.release.outputs.release_created }}
+      tag_name: ${{ steps.release.outputs.tag_name }}
     steps:
       - uses: googleapis/release-please-action@v4
         id: release
@@ -40,3 +47,16 @@ jobs:
             -f state=success \
             -f context="CI success" \
             -f description="Skipped: release PR only bumps version + CHANGELOG"
+
+  # When the release PR is merged, release-please cuts the tag + GitHub Release;
+  # build the artifacts and publish to PyPI in the same run.
+  release:
+    needs: release-please
+    if: ${{ needs.release-please.outputs.release_created == 'true' }}
+    permissions:
+      contents: write
+      id-token: write
+    uses: ./.github/workflows/release.yml
+    with:
+      tag_name: ${{ needs.release-please.outputs.tag_name }}
+    secrets: inherit

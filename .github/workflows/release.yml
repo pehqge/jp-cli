@@ -1,9 +1,18 @@
 name: Release
 
 on:
+  # Primary automated path: release-please calls this as a reusable workflow in
+  # the same run that creates the tag (a plain "push: tags" trigger never fires
+  # for tags created by GITHUB_TOKEN, by GitHub's anti-recursion rule).
+  workflow_call:
+    inputs:
+      tag_name:
+        description: "Tag to release (e.g. v1.2.3). Defaults to the triggering ref."
+        required: false
+        type: string
+  # Fallbacks: a human-pushed tag, or a manual run against an existing tag.
   push:
     tags: ["v*"]
-  # Manual fallback: run the build/publish against an existing tag if needed.
   workflow_dispatch:
 
 permissions:
@@ -80,6 +89,9 @@ jobs:
           cd release && sha256sum * > SHA256SUMS
       - uses: softprops/action-gh-release@v3
         with:
+          # On workflow_call github.ref is the branch, not the tag, so the tag
+          # must be passed in explicitly; push/dispatch fall back to the ref.
+          tag_name: ${{ inputs.tag_name || github.ref_name }}
           files: release/*
           generate_release_notes: true
 
