@@ -340,6 +340,13 @@ never get pushed by accident.
 **Will it overwrite my work?** Never silently. A conflict aborts that file;
 remote deletes are opt-in (mirror mode) and confirmed file-by-file.
 
+**Can I edit notebooks locally in VS Code but run them on the remote GPUs?** Yes —
+that's a core workflow. Sync with jp, then connect VS Code to your remote kernel.
+One catch: a remote kernel starts in the server's home, not your notebook's
+folder, so relative paths fail. Run `jp kernel` once to fix it. The full
+walkthrough (connecting the kernel + the cwd fix) is in
+[docs/vscode-remote-cwd.md](docs/vscode-remote-cwd.md).
+
 ## Troubleshooting
 
 - **`jp: command not found`** — run `pipx ensurepath` / `uv tool update-shell`, reopen the terminal.
