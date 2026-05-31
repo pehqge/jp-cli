@@ -5,6 +5,20 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.0](https://github.com/pehqge/jpsync/compare/v1.0.1...v1.1.0) (2026-05-31)
+
+
+### Features
+
+* **terminal:** `jp terminal` — remote shell over Jupyter terminals API ([4dd8e3c](https://github.com/pehqge/jpsync/commit/4dd8e3c070135520c5b060e040270238856a5a95))
+* **terminal:** add `jp terminal` remote shell over Jupyter terminals API ([ddffcc7](https://github.com/pehqge/jpsync/commit/ddffcc76661f5762c9a5544cd2d729a3c71fd8c4))
+
+
+### Documentation
+
+* move demo gif up below the clone example ([45b11ee](https://github.com/pehqge/jpsync/commit/45b11ee92967067923b40bba55a6a2673aa0eff0))
+* remove example commands from README ([b2b9e2b](https://github.com/pehqge/jpsync/commit/b2b9e2b327f4bdecbd11e8c7c8bb267a87100e07))
+
 ## [1.0.1](https://github.com/pehqge/jpsync/compare/v1.0.0...v1.0.1) (2026-05-31)
 
 
