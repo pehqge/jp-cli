@@ -49,3 +49,6 @@ htmlcov/
 # Internal research notes and scratch (kept locally, not published)
 research/
 refine_review_workflow.js
+
+# uv lockfile (project is zero-dependency; not tracked)
+uv.lock
