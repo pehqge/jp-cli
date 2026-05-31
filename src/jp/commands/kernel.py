@@ -28,7 +28,7 @@ from ._context import load_repo
 
 # Full walkthrough (connecting VS Code + how it works), linked from the command
 # output so the user can click straight through on GitHub.
-_GUIDE_URL = "https://github.com/pehqge/jp-cli/blob/main/docs/vscode-remote-cwd.md"
+_GUIDE_URL = "https://github.com/pehqge/jpsync/blob/main/docs/vscode-remote-cwd.md"
 
 # The file written on the remote. The two ``{...!r}`` slots are filled with the
 # workspace's local root and prefix so the mapping works for ANY prefix (including

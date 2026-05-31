@@ -69,7 +69,7 @@ Please upgrade to the newest release before reporting.
 Two options:
 
 1. **GitHub Security Advisories (preferred):** open a private report at
-   <https://github.com/pehqge/jp-cli/security/advisories/new>.
+   <https://github.com/pehqge/jpsync/security/advisories/new>.
 2. **Email:** [pehqge@gmail.com](mailto:pehqge@gmail.com) with `jp security`
    in the subject line.
 

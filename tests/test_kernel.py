@@ -25,7 +25,7 @@ def test_kernel_default_hides_script_and_links_guide(repo, monkeypatch, capsys):
     # and the GitHub guide.
     assert "SCRIPT = " not in out
     assert "jp kernel --script" in out
-    assert "github.com/pehqge/jp-cli" in out
+    assert "github.com/pehqge/jpsync" in out
 
 
 def test_kernel_script_flag_prints_snippet_with_prefix(repo, monkeypatch, capsys):

@@ -5,10 +5,10 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/pehqge/jp-cli/actions/workflows/ci.yml"><img src="https://github.com/pehqge/jp-cli/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
-  <a href="https://github.com/pehqge/jp-cli/releases/latest"><img src="https://img.shields.io/static/v1?label=release&message=v0.3.1&color=blue" alt="Release"></a> <!-- x-release-please-version -->
+  <a href="https://github.com/pehqge/jpsync/actions/workflows/ci.yml"><img src="https://github.com/pehqge/jpsync/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <a href="https://github.com/pehqge/jpsync/releases/latest"><img src="https://img.shields.io/static/v1?label=release&message=v0.3.1&color=blue" alt="Release"></a> <!-- x-release-please-version -->
   <img src="https://img.shields.io/badge/python-3.9%2B-blue" alt="Python 3.9+">
-  <a href="https://github.com/pehqge/jp-cli/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-MIT-yellow" alt="License: MIT"></a>
+  <a href="https://github.com/pehqge/jpsync/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-MIT-yellow" alt="License: MIT"></a>
   <img src="https://img.shields.io/badge/dependencies-zero-brightgreen" alt="Zero dependencies">
 </p>
 
@@ -52,32 +52,32 @@ $ jp push
 
 **With uv** (fastest):
 ```bash
-uv tool install jp-cli
+uv tool install jpsync
 ```
 
 **With pipx**:
 ```bash
-pipx install jp-cli
+pipx install jpsync
 ```
 
 **Straight from GitHub** (before the first PyPI release):
 ```bash
-pipx install "git+https://github.com/pehqge/jp-cli"
-# or:  uv tool install "git+https://github.com/pehqge/jp-cli"
+pipx install "git+https://github.com/pehqge/jpsync"
+# or:  uv tool install "git+https://github.com/pehqge/jpsync"
 ```
 
 **Install script (macOS / Linux)** — downloads the standalone binary, no Python needed:
 ```bash
-curl -fsSL https://raw.githubusercontent.com/pehqge/jp-cli/main/scripts/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/pehqge/jpsync/main/scripts/install.sh | sh
 ```
 
 **Install script (Windows, PowerShell)**:
 ```powershell
-powershell -ExecutionPolicy ByPass -c "irm https://raw.githubusercontent.com/pehqge/jp-cli/main/scripts/install.ps1 | iex"
+powershell -ExecutionPolicy ByPass -c "irm https://raw.githubusercontent.com/pehqge/jpsync/main/scripts/install.ps1 | iex"
 ```
 
 **Single file, no install** — grab `jp.pyz` from the
-[latest release](https://github.com/pehqge/jp-cli/releases/latest) and run it
+[latest release](https://github.com/pehqge/jpsync/releases/latest) and run it
 with any Python 3.9+:
 ```bash
 python jp.pyz --help
