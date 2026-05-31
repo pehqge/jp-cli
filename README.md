@@ -47,49 +47,51 @@ $ jp push
 
 ## Installation
 
-> Recommended: install in an isolated environment with **uv** or **pipx** so the
-> `jp` command lands on your `PATH` without touching system Python.
-
-**With uv** (fastest):
-```bash
-uv tool install jpsync
-```
-
-**With pipx**:
+**Recommended — [pipx](https://pipx.pypa.io):**
 ```bash
 pipx install jpsync
 ```
 
-**Straight from GitHub** (before the first PyPI release):
+**Or with [uv](https://docs.astral.sh/uv/):**
 ```bash
-pipx install "git+https://github.com/pehqge/jpsync"
-# or:  uv tool install "git+https://github.com/pehqge/jpsync"
+uv tool install jpsync
 ```
 
-**Install script (macOS / Linux)** — downloads the standalone binary, no Python needed:
+Both install the `jp` command in an isolated environment and put it on your
+`PATH`. Then check it works:
+```bash
+jp --version
+```
+
+> If `jp: command not found`, run `pipx ensurepath` (or `uv tool update-shell`)
+> and reopen your terminal.
+
+<details>
+<summary>Other ways to install</summary>
+
+**No Python required** — standalone binary (macOS / Linux):
 ```bash
 curl -fsSL https://raw.githubusercontent.com/pehqge/jpsync/main/scripts/install.sh | sh
 ```
 
-**Install script (Windows, PowerShell)**:
+**No Python required** — standalone binary (Windows, PowerShell):
 ```powershell
 powershell -ExecutionPolicy ByPass -c "irm https://raw.githubusercontent.com/pehqge/jpsync/main/scripts/install.ps1 | iex"
 ```
 
-**Single file, no install** — grab `jp.pyz` from the
+**Single file** — grab `jp.pyz` from the
 [latest release](https://github.com/pehqge/jpsync/releases/latest) and run it
 with any Python 3.9+:
 ```bash
 python jp.pyz --help
 ```
 
-Verify:
+**From source** (latest `main`):
 ```bash
-jp --version
+pipx install "git+https://github.com/pehqge/jpsync"
 ```
 
-> If `jp: command not found` after a pipx/uv install, run `pipx ensurepath` (or
-> `uv tool update-shell`) and reopen your terminal.
+</details>
 
 ---
 
