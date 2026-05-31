@@ -1,8 +1,4 @@
-"""jp subcommands. Each module exposes ``add_parser(subparsers)`` and ``run(args)``.
-
-``run`` returns an integer exit code (or raises a :class:`jp.errors.JpError`,
-which the dispatcher maps to its ``exit_code``).
-"""
+"""Command registry: each module exposes add_parser(subparsers)."""
 
 from __future__ import annotations
 
@@ -19,24 +15,23 @@ from . import (
     push,
     rm,
     status,
+    update,
     version,
 )
 
-# Ordered for a sensible --help listing.
 ALL = [
-    init,
     clone,
+    init,
     login,
-    status,
-    diff,
-    push,
     pull,
+    push,
+    status,
     ls,
-    rm,
-    ignore_cmd,
+    diff,
     config_cmd,
+    ignore_cmd,
+    rm,
     doctor,
+    update,
     version,
 ]
-
-__all__ = ["ALL"]

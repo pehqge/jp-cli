@@ -1,20 +1,44 @@
-"""``jp pull`` -- download remote changes into the local tree. Never deletes."""
+"""``jp pull`` -- download remote changes into the working tree.
+
+Additive by default (never deletes). With mirror mode on (config ``mirror`` or
+``--mirror``), local files that no longer exist remotely become deletion
+candidates -- and jp asks, file by file, before removing any of them.
+"""
 
 from __future__ import annotations
 
 import argparse
 
-from .. import sync, ui
+from .. import sync
 from ..errors import EXIT_OK, EXIT_PARTIAL, EXIT_SAFETY
-from . import _context
+from . import _context, _mirror
 from ._context import load_repo
 from ._report import report_outcome
 
 
 def add_parser(subparsers: argparse._SubParsersAction) -> None:
-    p = subparsers.add_parser("pull", help="download remote changes locally (no deletes)")
+    p = subparsers.add_parser(
+        "pull", help="download remote changes (additive; mirror deletes are opt-in)"
+    )
+    p.add_argument("--dry-run", action="store_true", help="show what would change; write nothing")
     p.add_argument(
-        "--dry-run", action="store_true", help="show what would be pulled; write nothing"
+        "--mirror",
+        dest="mirror",
+        action="store_true",
+        default=None,
+        help="enable mirror deletes for this run (overrides config)",
+    )
+    p.add_argument(
+        "--no-mirror",
+        dest="mirror",
+        action="store_false",
+        help="disable mirror deletes for this run (overrides config)",
+    )
+    p.add_argument(
+        "--yes",
+        "-y",
+        action="store_true",
+        help="in mirror mode, delete all candidates without prompting",
     )
     p.set_defaults(func=run)
 
@@ -22,13 +46,13 @@ def add_parser(subparsers: argparse._SubParsersAction) -> None:
 def run(args: argparse.Namespace) -> int:
     ctx = load_repo()
     api = _context.build_api(ctx.cfg)
-
-    ui.heading(f"pull <- {ctx.cfg.prefix}{' (dry-run)' if args.dry_run else ''}")
     outcome = sync.pull(ctx.root, ctx.cfg, api, ctx.index, ctx.ignore, dry_run=args.dry_run)
-    report_outcome("pull", outcome, dry_run=args.dry_run)
 
-    if outcome.had_failures:
-        return EXIT_PARTIAL
+    mirror = ctx.cfg.mirror if args.mirror is None else args.mirror
+    if mirror:
+        _mirror.handle("local", ctx, api, outcome, yes=args.yes, dry_run=args.dry_run)
+
+    report_outcome("pull", outcome, dry_run=args.dry_run)
     if outcome.had_conflicts:
         return EXIT_SAFETY
-    return EXIT_OK
+    return EXIT_PARTIAL if outcome.had_failures else EXIT_OK

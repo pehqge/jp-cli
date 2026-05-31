@@ -1,7 +1,15 @@
-"""``jp config`` -- view or set repo config values (never prints the token).
+"""``jp config`` -- view and edit workspace configuration.
 
-Only the token *path* is ever shown; the token value lives outside the config
-and is never read or printed by this command.
+With no action, opens an interactive settings screen (arrows to move, Space to
+change, ``i`` for info, ``/`` to search, Enter to save, Esc to cancel) -- much
+like Claude Code's settings. In a non-interactive shell it falls back to
+printing the current settings.
+
+The scriptable forms still work for automation:
+
+    jp config list
+    jp config get <key>
+    jp config set <key> <value>
 """
 
 from __future__ import annotations
@@ -9,52 +17,96 @@ from __future__ import annotations
 import argparse
 
 from .. import config as config_mod
-from .. import ui
+from .. import tui, ui
 from ..errors import EXIT_OK, UsageError
-from ..paths import validate_prefix
+from ..settings_schema import BY_KEY, SPECS
 from ._context import load_repo
 
-_SETTABLE = {"base_url", "prefix", "token_path", "dotfiles"}
+# Connection fields shown as read-only context above the editable settings.
+_CONNECTION_KEYS = ("base_url", "prefix", "token_path")
 
 
 def add_parser(subparsers: argparse._SubParsersAction) -> None:
-    p = subparsers.add_parser("config", help="view or set repo configuration")
-    p.add_argument("key", nargs="?", help="config key to read or set")
-    p.add_argument("value", nargs="?", help="new value (omit to read)")
-    p.add_argument("--list", action="store_true", help="list all config values")
+    p = subparsers.add_parser("config", help="view/edit settings (interactive by default)")
+    p.add_argument("action", nargs="?", choices=["get", "set", "list"], help="scriptable action")
+    p.add_argument("key", nargs="?", help="config key")
+    p.add_argument("value", nargs="?", help="value to set")
     p.set_defaults(func=run)
+
+
+def _print_list(cfg: config_mod.Config) -> None:
+    for key in (*_CONNECTION_KEYS, *(s.key for s in SPECS)):
+        ui.info(f"{key} = {getattr(cfg, key, '')}")
 
 
 def run(args: argparse.Namespace) -> int:
     ctx = load_repo()
     cfg = ctx.cfg
 
-    if args.list or (not args.key):
-        ui.heading("config:")
-        ui.out(f"  base_url   = {cfg.base_url}")
-        ui.out(f"  prefix     = {cfg.prefix}")
-        ui.out(f"  dotfiles   = {cfg.dotfiles}")
-        # Only the PATH is shown, never the token value.
-        ui.out(f"  token_path = {cfg.token_path or '(unset)'}")
+    # --- scriptable paths ---------------------------------------------------
+    if args.action == "list":
+        _print_list(cfg)
+        return EXIT_OK
+    if args.action == "get":
+        if not args.key:
+            raise UsageError("config get requires a key")
+        ui.info(f"{getattr(cfg, args.key, '')}")
+        return EXIT_OK
+    if args.action == "set":
+        if not args.key or args.value is None:
+            raise UsageError("config set requires a key and a value")
+        if not hasattr(cfg, args.key):
+            raise UsageError(f"unknown config key: {args.key}")
+        spec = BY_KEY.get(args.key)
+        value: object = args.value
+        if spec is not None:
+            try:
+                value = spec.coerce(args.value)
+            except (TypeError, ValueError) as exc:
+                raise UsageError(f"invalid value for {args.key}: {args.value!r} ({exc})") from exc
+            if spec.options and value not in spec.options:
+                allowed = ", ".join(spec.fmt(o) for o in spec.options)
+                raise UsageError(f"{args.key} must be one of: {allowed}")
+        setattr(cfg, args.key, value)
+        config_mod.save(ctx.root, cfg)
+        ui.success(f"set {args.key} = {spec.fmt(value) if spec else value}")
         return EXIT_OK
 
-    key = args.key
-    if key not in _SETTABLE:
-        raise UsageError(f"unknown config key: {key} (settable: {sorted(_SETTABLE)})")
-
-    if args.value is None:
-        val = getattr(cfg, key)
-        ui.out(str(val))
+    # --- interactive (no action) -------------------------------------------
+    if not tui.interactive():
+        # Non-interactive shell: just show the settings (never block on a prompt).
+        _print_list(cfg)
+        ui.info("\n(run in a terminal for the interactive editor, or use 'jp config set')")
         return EXIT_OK
 
-    new = args.value
-    if key == "prefix":
-        new = validate_prefix(new)  # refuse shared/root prefixes on set too
-    if key == "base_url" and not new.startswith(("http://", "https://")):
-        raise UsageError("base_url must be an http(s) URL")
-    if key == "dotfiles" and new != "skip":
-        raise UsageError("dotfiles only supports 'skip' in phase 1")
-    setattr(cfg, key, new)
+    # Connection context (read-only here; change via 'jp config set').
+    ui.heading(f"jp workspace: {ctx.root}")
+    for key in _CONNECTION_KEYS:
+        ui.detail(f"  {key} = {getattr(cfg, key, '') or '(unset)'}")
+    ui.info("")
+
+    rows = [
+        tui.Setting(
+            key=s.key,
+            label=s.label,
+            value=getattr(cfg, s.key),
+            options=s.options,
+            help_text=s.help_text,
+            fmt=s.fmt,
+        )
+        for s in SPECS
+    ]
+    result = tui.settings_menu(rows, title="Settings")
+    if result is None:
+        ui.info("no changes saved")
+        return EXIT_OK
+
+    changed = [r for r in result if r.changed]
+    if not changed:
+        ui.info("no changes")
+        return EXIT_OK
+    for r in changed:
+        setattr(cfg, r.key, r.value)
     config_mod.save(ctx.root, cfg)
-    ui.success(f"set {key} = {new}")
+    ui.success(f"saved {len(changed)} change(s): " + ", ".join(r.key for r in changed))
     return EXIT_OK
