@@ -41,6 +41,10 @@ $ jp push
 ✓ push: 2 transferred, 10 up to date, 0 skipped, 0 conflict(s), 0 failed
 ```
 
+<p align="center">
+  <img src="assets/demo.gif" alt="jp demo: clone a JupyterHub folder, edit locally, push, then pull a teammate's results" width="760">
+</p>
+
 ## Why jp?
 
 - **Git-like workflow** — `jp clone`, `jp status`, `jp push`, `jp pull`. Same muscle memory.
@@ -172,10 +176,6 @@ jp status          # what changed, locally vs the server
 jp push            # send local changes up
 jp pull            # bring remote changes (e.g. training output) down
 ```
-
-<p align="center">
-  <img src="assets/demo.gif" alt="jp demo: clone a JupyterHub folder, edit locally, push, then pull a teammate's results" width="760">
-</p>
 
 That's it. From any subdirectory of the workspace, `jp` finds its root
 automatically (it walks up looking for `.jp/`, stopping at your home folder).
