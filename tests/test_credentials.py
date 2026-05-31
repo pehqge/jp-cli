@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import stat
+import sys
 from pathlib import Path
 
 import pytest
@@ -38,7 +39,9 @@ def test_add_global_writes_private_file_and_registry(home):
     cred = credentials.add("myserver", "SECRET-TOKEN-abcdef1234", scope="global")
     tok = Path(cred.token_path)
     assert tok.is_file()
-    assert _mode(tok) == 0o600
+    if sys.platform != "win32":
+        # Windows has no POSIX mode bits, so chmod(0o600) can't be enforced there.
+        assert _mode(tok) == 0o600
     assert tok.read_text().strip() == "SECRET-TOKEN-abcdef1234"
     reg = json.loads((home / ".config" / "jp" / "credentials.json").read_text())
     assert reg["credentials"]["myserver"]["token_path"] == str(tok)
