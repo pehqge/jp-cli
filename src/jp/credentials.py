@@ -247,6 +247,10 @@ def read_token(cred: Credential) -> str:
 
 def _warn_if_world_readable(path: Path) -> None:
     """On POSIX, warn if the token file is group/other-readable (shared box)."""
+    # Windows reports a synthetic 0o666 mode and has no POSIX group/other bits,
+    # so this check would fire on every read with a bogus "chmod 600" hint.
+    if os.name != "posix":
+        return
     try:
         mode = path.stat().st_mode
     except OSError:
