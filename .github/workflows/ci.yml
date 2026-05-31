@@ -52,3 +52,17 @@ jobs:
       - run: python -m build
       - run: python -m zipapp src -m "jp.cli:main" -p "/usr/bin/env python3" -o jp.pyz
       - run: python jp.pyz version
+
+  # Single required status check. Branch protection requires only this job,
+  # so the test matrix can change without breaking protection or auto-merge.
+  # Fails if any needed job failed or was cancelled.
+  ci-success:
+    name: CI success
+    if: always()
+    needs: [lint, test, package]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Fail if any job did not succeed
+        if: contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled')
+        run: exit 1
+      - run: echo "All CI jobs passed."
