@@ -114,3 +114,11 @@ jobs:
       - name: Drop non-PyPI artifacts
         run: rm -f dist/jp.pyz
       - uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          # When release-please calls this as a reusable workflow, OIDC auth
+          # keys off job_workflow_ref (release.yml -> matches the PyPI Trusted
+          # Publisher), but PEP 740 attestations are bound to the *entry*
+          # workflow (release-please.yml), which the publisher doesn't match,
+          # so the upload 400s. Disable attestations so the automated
+          # release-please path publishes; OIDC still authorizes the upload.
+          attestations: false
