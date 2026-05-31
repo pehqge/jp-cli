@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Named credentials: `jp login` is now interactive — it explains how to get a
+  JupyterHub API token, reads it with hidden input, asks for a name, and saves it
+  **globally** (`~/.config/jp/`) or **locally** (a workspace's `.jp/`). Token
+  values are written to private `600` files and never leave the machine; only the
+  credential name is recorded in config. Scriptable via `--name`,
+  `--global`/`--local`, `--token-stdin`, `--token-path`, `--force`.
+- `jp clone` / `jp init` select a saved credential automatically when only one
+  exists, or prompt to choose when several do (`--credential <name>` to skip the
+  prompt); the choice is recorded in the workspace config.
+- New `credential` config key and a `credentials.json` registry per scope.
+- Every `.jp/` workspace now gets a `.jp/.gitignore` (`*`) so a workspace that is
+  also a git repo can never commit its local state or a local token file.
+
+### Changed
+
+- Token resolution order is now `$JP_TOKEN` → `$JP_TOKEN_FILE` → the workspace's
+  saved credential → legacy `token_path` / `~/.config/jp/token` (the legacy paths
+  remain supported).
+
 ## [0.1.0] - 2026-05-30
 
 ### Added

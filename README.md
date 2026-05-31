@@ -109,24 +109,34 @@ jp --version
 > Security: the token is like a password for your account. `jp` stores only the
 > *path* to a token file, never the token value, and never logs or commits it.
 
-### 2. Save the token to a file
+### 2. Log in with `jp login`
 
-Put the token in a private file on your machine (not in any repo):
+Run `jp login` and follow the prompts. It walks you through getting the token,
+you paste it (your input stays **hidden**), give the server a short name, and
+choose whether to save it **globally** (usable from anywhere) or **only in this
+workspace**:
 
-```bash
-# macOS / Linux
-printf '%s\n' 'PASTE_YOUR_TOKEN_HERE' > ~/.jupyter_token
-chmod 600 ~/.jupyter_token
+```console
+$ jp login
+To get a JupyterHub API token:
+  1. Open your JupyterHub in a browser and log in.
+  2. Go to the Token page (the 'Token' link, or <your-hub>/hub/token).
+  3. Click 'Request new API token' and copy it (it is shown only once).
+
+Paste your API token (input hidden):
+Name this server/credential (e.g. ufsc): ufsc
+Save in THIS workspace only (local) or globally? [g/l] (default g): g
+✓ saved global credential 'ufsc'
 ```
 
-```powershell
-# Windows (PowerShell)
-'PASTE_YOUR_TOKEN_HERE' | Out-File -Encoding ascii "$HOME\.jupyter_token"
-```
+**Everything stays on your machine.** `jp` writes the token to a private file
+(permissions `600`) under `~/.config/jp/` (or the workspace's `.jp/` for a local
+credential) and records only the credential's *name* in config — never the token
+value. The token is never printed, logged, committed, or sent anywhere except as
+the `Authorization` header to your own hub.
 
-`jp` looks for a token, in order, from: `--token-path` → `$JP_TOKEN` (the value
-itself, handy for CI) → `$JP_TOKEN_FILE` (a path) → the path saved in your
-workspace config → `~/.config/jp/token`.
+Run `jp login` again any time to add another server — keep as many credentials as
+you like and pick one when you clone. See [Credentials](#credentials--jp-login).
 
 ### 3. Make sure your server is running
 
@@ -140,12 +150,14 @@ Copy the URL of the folder from your browser's address bar — the `lab/tree/...
 URL works directly:
 
 ```bash
-jp clone https://jupyter.example.com/user/<you>/lab/tree/privado --token-path ~/.jupyter_token
+jp clone https://jupyter.example.com/user/<you>/lab/tree/privado
 cd privado
 ```
 
-That creates a `privado/` folder with a `.jp/` workspace inside (like `.git/`),
-records the token *path* in its config, and downloads the remote tree.
+That creates a `privado/` folder with a `.jp/` workspace inside (like `.git/`)
+and downloads the remote tree. If you saved more than one credential, `jp` asks
+which one to use; with a single one it just uses it. The choice is remembered in
+the workspace (`jp clone … --credential <name>` to skip the prompt).
 
 ### 5. Work like git
 
@@ -166,7 +178,7 @@ automatically (it walks up looking for `.jp/`, stopping at your home folder).
 |---|---|
 | `jp clone <url> [dir]` | Clone a remote Jupyter folder into a new local directory. Accepts a `lab/tree` URL or `--base-url`/`--prefix`. |
 | `jp init <url>` | Turn the current folder into a jp workspace (no download). |
-| `jp login` | Register your token (path only) interactively. |
+| `jp login` | Save a named API-token credential (paste the token, name the server, choose global or per-repo). |
 | `jp status` | Show local vs. remote differences. Read-only. |
 | `jp push` | Upload local changes. Additive by default. |
 | `jp pull` | Download remote changes. Additive by default. |
@@ -230,6 +242,44 @@ Nothing is deleted unless you mark it. In a non-interactive shell, mirror
 deletions are refused unless you pass `--yes`. Conflicts (both sides changed) are
 *never* deleted or overwritten.
 
+### Credentials & `jp login`
+
+`jp login` is how you give `jp` your JupyterHub API token. It is fully
+interactive and **everything happens locally** — the token never leaves your
+machine and is never printed:
+
+- It shows you how to get a token, then prompts you to paste it with the input
+  **hidden** (no echo).
+- You give the credential a **name** (usually the server, e.g. `ufsc`).
+- You choose the **scope**:
+  - **global** — stored in `~/.config/jp/`, usable from any directory.
+  - **local** — stored in this workspace's `.jp/`, usable *only* here. Run `jp`
+    in another folder and it won't see this credential (it'll ask you to
+    `jp login` there).
+- The token value goes into a private `600` file; only its *name* is recorded in
+  the workspace config (`credential` key).
+- A **local** credential lives in the workspace's `.jp/`, and `jp` drops a
+  `.jp/.gitignore` (`*`) so that — even if the workspace is also a git repo — git
+  ignores the whole `.jp/` directory and the token can never be committed.
+
+Save as many as you like — run `jp login` once per server:
+
+```bash
+jp login                       # interactive: paste, name, choose scope
+jp login --name ufsc --global  # scriptable form
+jp login --token-stdin --name lab-gpu --local < token.txt
+```
+
+When you `jp clone` / `jp init`, `jp` reads the credentials available **globally
+and locally**: with one it's used automatically, with several you pick which
+server to use (or pass `--credential <name>`). The choice is saved in the
+workspace so later `push`/`pull` just work.
+
+At sync time the token is resolved, in order: `$JP_TOKEN` (a value, for CI) →
+`$JP_TOKEN_FILE` (a path) → the workspace's saved credential → legacy
+`token_path` / `~/.config/jp/token`. `jp` warns if any token file is readable by
+other users.
+
 ### Keeping jp up to date
 
 ```bash
@@ -245,8 +295,8 @@ command for your OS.
 ## Configuration
 
 Each workspace stores its settings in `.jp/config.json` (JSON, never the token
-value). Keys: `base_url`, `prefix`, `token_path`, `mirror`, `dotfiles`, `color`,
-`timeout`. See [docs/commands.md](docs/commands.md) and
+value). Keys: `base_url`, `prefix`, `credential`, `token_path`, `mirror`,
+`dotfiles`, `color`, `timeout`. See [docs/commands.md](docs/commands.md) and
 [docs/architecture.md](docs/architecture.md).
 
 ---

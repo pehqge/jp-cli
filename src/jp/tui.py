@@ -338,6 +338,64 @@ def settings_menu(
 
 
 # --------------------------------------------------------------------------- #
+# Single-choice selector (e.g. pick a credential at clone/init time)
+# --------------------------------------------------------------------------- #
+
+
+def select_one(labels: Sequence[str], title: str = "", _reader: object | None = None) -> int | None:
+    """Let the user pick one item from ``labels``. Returns the chosen index, or
+    None on cancel (Esc).
+
+    Controls: Up/Down move · Enter select · Esc cancel.
+
+    ``_reader`` is a test seam (see :func:`settings_menu`).
+    """
+    items = list(labels)
+    if not items:
+        return None
+    if _reader is None and not interactive():
+        raise RuntimeError("select_one requires an interactive terminal")
+
+    idx = 0
+    prev_lines = 0
+
+    def render() -> None:
+        nonlocal prev_lines
+        lines: list[str] = []
+        if title:
+            lines.append(f"{BOLD}{title}{RESET}")
+            lines.append("")
+        for i, label in enumerate(items):
+            cursor = f"{CYAN}>{RESET} " if i == idx else "  "
+            color = CYAN if i == idx else ""
+            end = RESET if i == idx else ""
+            lines.append(f"{cursor}{color}{label}{end}")
+        lines.append("")
+        lines.append(f"{DIM}Up/Down move · Enter select · Esc cancel{RESET}")
+        _clear_lines(prev_lines)
+        _w("\r" + "\n".join(lines) + "\n")
+        sys.stdout.flush()
+        prev_lines = len(lines)
+
+    _hide_cursor()
+    try:
+        with _reader if _reader is not None else _make_reader() as reader:
+            while True:
+                render()
+                key = reader.read_key()
+                if key in ("up", "k"):
+                    idx = (idx - 1) % len(items)
+                elif key in ("down", "j"):
+                    idx = (idx + 1) % len(items)
+                elif key == "enter":
+                    return idx
+                elif key in ("esc", "q", ""):
+                    return None
+    finally:
+        _show_cursor()
+
+
+# --------------------------------------------------------------------------- #
 # Keep/Delete confirmation selector (mirror-mode deletions)
 # --------------------------------------------------------------------------- #
 

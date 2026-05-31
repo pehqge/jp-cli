@@ -43,6 +43,15 @@ src/jp/
 - **Workspace discovery walks up for `.jp/`**, the same way git looks for
   `.git/`, so commands work from any subdirectory of a workspace.
 
+- **Named credentials keep token values out of synced files (`credentials.py`).**
+  `jp login` writes the token *value* to a private `0600` file under a `0700`
+  directory and maps a name to it in a `credentials.json` registry — global
+  (`~/.config/jp/`) or local (a workspace's `.jp/`, never synced). The config
+  records only the credential *name*; `config.load_token` resolves it at call
+  time (local registry before global), falling back to the legacy `token_path` /
+  `~/.config/jp/token`. This lets one machine hold several servers' tokens while
+  keeping secrets off the synced tree.
+
 ## What is intentionally out of scope (for now)
 
 - Remote kernel execution (`jp run`/`jp exec` over WebSocket) is planned as an

@@ -17,6 +17,7 @@ from ..errors import EXIT_OK, UsageError
 from ..index import Index
 from ..paths import DOT_DIR, validate_prefix
 from ..urls import parse_clone_url
+from . import _context
 
 
 def add_parser(subparsers: argparse._SubParsersAction) -> None:
@@ -30,6 +31,9 @@ def add_parser(subparsers: argparse._SubParsersAction) -> None:
     p.add_argument("--base-url", default="", help="Contents API base URL (instead of a URL)")
     p.add_argument("--prefix", default="", help="remote prefix (instead of a URL)")
     p.add_argument("--token-path", default="", help="path to the token file")
+    p.add_argument(
+        "--credential", default="", help="name of a saved credential to use (see 'jp login')"
+    )
     p.set_defaults(func=run)
 
 
@@ -48,9 +52,14 @@ def run(args: argparse.Namespace) -> int:
     if (root / DOT_DIR).exists():
         raise UsageError(f"{root} is already a jp workspace")
 
+    credential = _context.choose_credential(args, root=None)
     cfg = Config(
-        base_url=base_url.rstrip("/"), prefix=prefix, token_path=str(args.token_path or "")
+        base_url=base_url.rstrip("/"),
+        prefix=prefix,
+        token_path=str(args.token_path or ""),
+        credential=credential,
     )
+    cfg._config_dir = root / DOT_DIR
     config_mod.save(root, cfg)
     Index(root).save()
     ui.success(f"initialized jp workspace in {root} (remote: {prefix})")

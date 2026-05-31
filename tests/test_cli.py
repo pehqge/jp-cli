@@ -40,6 +40,8 @@ def test_init_refuses_shared_prefix(tmp_path, monkeypatch):
 
 def test_init_creates_repo(tmp_path, monkeypatch, capsys):
     monkeypatch.chdir(tmp_path)
+    # A token available via env means init needs no saved credential.
+    monkeypatch.setenv("JP_TOKEN", "DUMMYTOKENVALUE1234567890")
     rc = cli.main(["init", "--base-url", "https://h/api", "--prefix", "users/alice"])
     assert rc == EXIT_OK
     assert (tmp_path / ".jp" / "config.json").is_file()

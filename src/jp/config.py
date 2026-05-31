@@ -32,6 +32,9 @@ class Config:
     base_url: str
     prefix: str
     token_path: str = ""
+    # Name of the saved credential (see credentials.py) this workspace uses.
+    # Resolved to a token file at call time; the token value is never stored here.
+    credential: str = ""
     # Default dotfile policy: skip (server rejects hidden uploads).
     dotfiles: str = "skip"
     # Network timeout (seconds) for API calls; generous because the shared box
@@ -64,12 +67,23 @@ class Config:
         }
         if self.token_path:
             data["token_path"] = self.token_path
+        if self.credential:
+            data["credential"] = self.credential
         data.update(self.extra)
         return data
 
     @classmethod
     def from_json(cls, data: dict[str, Any]) -> Config:
-        known = {"base_url", "prefix", "token_path", "dotfiles", "timeout", "mirror", "color"}
+        known = {
+            "base_url",
+            "prefix",
+            "token_path",
+            "credential",
+            "dotfiles",
+            "timeout",
+            "mirror",
+            "color",
+        }
         extra = {k: v for k, v in data.items() if k not in known}
         base_url = str(data.get("base_url", "")).strip()
         prefix = str(data.get("prefix", "")).strip()
@@ -91,6 +105,7 @@ class Config:
             base_url=base_url.rstrip("/"),
             prefix=prefix,
             token_path=str(data.get("token_path", "")),
+            credential=str(data.get("credential", "")),
             dotfiles=str(data.get("dotfiles", "skip")) or "skip",
             timeout=timeout,
             mirror=bool(data.get("mirror", False)),
@@ -124,6 +139,7 @@ def save(root: Path, cfg: Config) -> None:
     """Write the config atomically with private (0600) permissions."""
     dot = Path(root) / DOT_DIR
     dot.mkdir(parents=True, exist_ok=True)
+    ensure_dot_gitignore(root)
     path = config_path(root)
     tmp = path.with_suffix(".json.tmp")
     tmp.write_text(json.dumps(cfg.to_json(), indent=2) + "\n", encoding="utf-8")
@@ -132,17 +148,56 @@ def save(root: Path, cfg: Config) -> None:
     os.replace(str(tmp), str(path))
 
 
+# Content of the guard .gitignore dropped inside every ``.jp/``. ``*`` makes git
+# ignore the entire metadata dir (local config, index, AND any local token
+# files), so a workspace that also happens to be a git repo can never commit a
+# credential by accident. ``.jp/`` is per-clone local state, like ``.git/``.
+_DOT_GITIGNORE = "# jp workspace metadata -- never commit (local state + token files)\n*\n"
+
+
+def ensure_dot_gitignore(root: Path) -> None:
+    """Make sure ``<root>/.jp/.gitignore`` exists so git ignores all of ``.jp/``.
+
+    Defense in depth against accidentally committing a local credential when the
+    workspace is also a git repository. Idempotent and best-effort: never raises.
+    """
+    dot = Path(root) / DOT_DIR
+    gi = dot / ".gitignore"
+    try:
+        dot.mkdir(parents=True, exist_ok=True)
+        if not gi.exists():
+            gi.write_text(_DOT_GITIGNORE, encoding="utf-8")
+    except OSError:
+        # Worst case git protection is missing; never block the real operation.
+        ui.warn(f"could not write {gi}; add '.jp/' to your .gitignore manually")
+
+
 # --------------------------------------------------------------------------- #
 # Token loading
 # --------------------------------------------------------------------------- #
 def _default_token_candidates(cfg: Config | None) -> list[Path]:
     candidates: list[Path] = []
-    if cfg and cfg.token_path:
-        candidates.append(Path(os.path.expanduser(cfg.token_path)))
-    # Env var override (path OR value): JP_TOKEN is the value, JP_TOKEN_FILE the path.
+    # 1) Env var override (path): JP_TOKEN_FILE points at a token file. (The
+    #    JP_TOKEN *value* is handled separately and wins in load_token.)
     env_file = os.environ.get("JP_TOKEN_FILE")
     if env_file:
         candidates.append(Path(os.path.expanduser(env_file)))
+    # 2) The named credential recorded in this workspace's config (local first,
+    #    then global -- see credentials.resolve).
+    if cfg and cfg.credential:
+        from . import credentials
+
+        root: Path | None = None
+        config_dir = cfg.config_dir
+        if str(config_dir) not in (".", ""):
+            root = config_dir.parent
+        cred = credentials.resolve(cfg.credential, root)
+        if cred is not None:
+            candidates.append(Path(os.path.expanduser(cred.token_path)))
+    # 3) Back-compat: a direct token path stored in the config.
+    if cfg and cfg.token_path:
+        candidates.append(Path(os.path.expanduser(cfg.token_path)))
+    # 4) Back-compat: the legacy global token file.
     candidates.append(Path(os.path.expanduser("~/.config/jp/token")))
     return candidates
 

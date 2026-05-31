@@ -41,3 +41,55 @@ def build_api(cfg: Config) -> Api:
     """Construct an Api client, loading the token (and registering it for redaction)."""
     token = config_mod.load_token(cfg)
     return Api(cfg.base_url, token)
+
+
+def choose_credential(args: object, root: Path | None = None) -> str:
+    """Decide which saved credential ``clone``/``init`` should record.
+
+    Returns the credential NAME to store in the new workspace's config, or ``""``
+    when no credential applies (an explicit ``--token-path`` or a ``JP_TOKEN``/
+    ``JP_TOKEN_FILE`` env token is being used instead).
+
+    Resolution: an explicit ``--credential`` is validated against what exists;
+    otherwise zero credentials is an error (run ``jp login`` first), exactly one
+    is used silently, and several trigger an interactive picker (or, in a
+    non-interactive shell, an error asking for ``--credential``).
+    """
+    import os
+
+    from .. import credentials, tui
+    from ..errors import AuthError, UsageError
+
+    # An explicit token path bypasses the credential system entirely.
+    if getattr(args, "token_path", ""):
+        return ""
+
+    requested = (getattr(args, "credential", "") or "").strip()
+    available = credentials.list_credentials(root=root)
+
+    if requested:
+        if not any(c.name == requested for c in available):
+            names = ", ".join(c.name for c in available) or "(none)"
+            raise UsageError(f"no saved credential named {requested!r}. Available: {names}")
+        return requested
+
+    if not available:
+        if os.environ.get("JP_TOKEN") or os.environ.get("JP_TOKEN_FILE"):
+            return ""
+        raise AuthError("no credentials configured. Run 'jp login' first to save your API token.")
+
+    if len(available) == 1:
+        return available[0].name
+
+    # More than one: let the user choose.
+    if tui.interactive():
+        labels = [f"{c.name}  ({c.scope})" for c in available]
+        idx = tui.select_one(labels, title="Select a credential for this workspace")
+        if idx is None:
+            raise UsageError("no credential selected")
+        return available[idx].name
+
+    names = ", ".join(c.name for c in available)
+    raise UsageError(
+        f"multiple saved credentials; choose one with --credential NAME (one of: {names})"
+    )

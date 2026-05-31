@@ -28,12 +28,15 @@ afterthought. This document explains the guarantees and how they are enforced.
    bytes, Windows reserved names). Writes are atomic and never follow a symlink,
    so a planted symlink cannot redirect a write outside the working tree.
 
-5. **Your token never leaks.** Only the *path* to your token file is stored in
-   the config — never the token value. The token is sent in the `Authorization`
-   header, never in a URL. All output passes through a redaction layer that
-   scrubs the token (and server filesystem paths) from logs and error messages.
-   TLS certificates are always verified; `jp` refuses to send a token over plain
-   HTTP.
+5. **Your token never leaks.** `jp login` saves the token to a private `0600`
+   file (global in `~/.config/jp/`, or local in a workspace's `.jp/`); the config
+   stores only the credential *name* — never the token value. The value stays on
+   your machine and is sent only in the `Authorization` header, never in a URL.
+   A **local** token lives in `.jp/`, and `jp` writes a `.jp/.gitignore` (`*`) so
+   that a workspace which is also a git repo can never commit the token by
+   accident. All output passes through a redaction layer that scrubs the token
+   (and server filesystem paths) from logs and error messages. TLS certificates
+   are always verified; `jp` refuses to send a token over plain HTTP.
 
 ## Why these specific rules
 

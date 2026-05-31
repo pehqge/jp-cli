@@ -10,8 +10,10 @@ Create a new local workspace from a remote Jupyter folder and download its tree.
 The URL is the one from your browser's address bar, e.g.
 `https://host/user/<name>/lab/tree/<folder>`; `tree`, `doc/tree`, `notebooks`,
 named servers and standalone servers are also understood. Alternatively pass
-`--base-url <api-base>` and `--prefix <remote-path>` explicitly. `--token-path`
-records which token file to use. `--dry-run` previews without writing.
+`--base-url <api-base>` and `--prefix <remote-path>` explicitly. `--credential
+<name>` picks a saved credential (see `jp login`); if omitted, jp uses the only
+one or prompts you to choose. `--token-path` records a token file directly.
+`--dry-run` previews without writing.
 
 The clone **refuses** a prefix that resolves to the server root or a shared
 directory (e.g. `compartilhado`, `lapix`), so a workspace can never point at
@@ -23,9 +25,20 @@ Turn the current directory into a jp workspace without downloading anything
 `--prefix` forms as `clone`.
 
 ### `jp login`
-Register your API token. `--token-path <file>` records an existing token file;
-`--stdin` reads a token from stdin and saves it to `~/.config/jp/token` with
-`0600` permissions. Only the token's **path** is stored — never its value.
+Save a **named credential** for a server, interactively. It explains how to get a
+JupyterHub API token, prompts you to paste it (hidden, via `getpass`), asks for a
+name (e.g. `ufsc`), and asks whether to save it **global** (everywhere) or
+**local** (this workspace only). The token value is written to a private `0600`
+file and registered for redaction; it is never echoed and never written into
+`.jp/config.json`. Run it repeatedly to store several servers.
+
+Scriptable flags: `--name <name>`, `--global`/`--local` (local requires a
+workspace), `--token-stdin` (read the value from stdin), `--token-path <file>`
+(register an existing token file), `--force` (overwrite an existing name).
+
+Token resolution at sync time: `$JP_TOKEN` → `$JP_TOKEN_FILE` → the recorded
+credential (local registry before global) → legacy `token_path` → legacy
+`~/.config/jp/token`.
 
 ## Synchronization
 

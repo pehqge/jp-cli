@@ -73,3 +73,28 @@ def test_api_refuses_token_over_http():
 
     with pytest.raises(AuthError):
         Api("http://insecure/api", "sometoken")
+
+
+def test_config_roundtrips_credential_name(tmp_path):
+    root = tmp_path / "r"
+    root.mkdir()
+    cfg = Config(base_url="https://h/api", prefix="users/alice", credential="ufsc")
+    config_mod.save(root, cfg)
+    raw = json.loads((root / ".jp" / "config.json").read_text())
+    assert raw["credential"] == "ufsc"
+    assert "token" not in raw  # still no token value
+    assert config_mod.load(root).credential == "ufsc"
+
+
+def test_load_token_resolves_recorded_credential(tmp_path, monkeypatch):
+    from jp import credentials
+
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.delenv("JP_TOKEN", raising=False)
+    monkeypatch.delenv("JP_TOKEN_FILE", raising=False)
+    credentials.add("ufsc", "CREDTOKENVALUE1234567890", scope="global")
+    root = tmp_path / "r"
+    root.mkdir()
+    config_mod.save(root, Config(base_url="https://h/api", prefix="users/alice", credential="ufsc"))
+    cfg = config_mod.load(root)
+    assert config_mod.load_token(cfg) == "CREDTOKENVALUE1234567890"

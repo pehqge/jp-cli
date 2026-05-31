@@ -41,6 +41,9 @@ def add_parser(subparsers: argparse._SubParsersAction) -> None:
     p.add_argument("--prefix", default="", help="remote prefix (instead of a URL)")
     p.add_argument("--token-path", default="", help="path to the token file")
     p.add_argument(
+        "--credential", default="", help="name of a saved credential to use (see 'jp login')"
+    )
+    p.add_argument(
         "--dry-run", action="store_true", help="show what would be downloaded; write nothing"
     )
     p.set_defaults(func=run)
@@ -70,7 +73,16 @@ def run(args: argparse.Namespace) -> int:
         raise UsageError(f"{root} is already a jp workspace")
     root.mkdir(parents=True, exist_ok=True)
 
-    cfg = Config(base_url=base_url, prefix=prefix, token_path=str(args.token_path or ""))
+    # Pick which saved credential this workspace will use (no repo exists yet,
+    # so only global credentials are in play here).
+    credential = _context.choose_credential(args, root=None)
+    cfg = Config(
+        base_url=base_url,
+        prefix=prefix,
+        token_path=str(args.token_path or ""),
+        credential=credential,
+    )
+    cfg._config_dir = root / DOT_DIR
     if not args.dry_run:
         config_mod.save(root, cfg)
         Index(root).save()

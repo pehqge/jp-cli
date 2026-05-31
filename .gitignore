@@ -35,6 +35,7 @@ htmlcov/
 *.swp
 .idea/
 .vscode/
+.serena/
 
 # Secrets / credentials -- NEVER commit a token
 *.token
