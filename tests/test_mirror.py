@@ -6,7 +6,6 @@ import conftest
 from jp import sync
 from jp.commands import _mirror
 from jp.commands._context import RepoContext
-from jp.config import Config
 from jp.ignore import IgnoreSet
 from jp.index import Entry, Index
 
@@ -102,7 +101,9 @@ def test_mirror_local_delete_after_confirm(repo, cfg, fake_api, monkeypatch):
     import jp.tui as tui
 
     monkeypatch.setattr(tui, "interactive", lambda *a, **k: True)
-    monkeypatch.setattr(tui, "confirm_deletions", lambda paths, where, _reader=None: ["scratch.txt"])
+    monkeypatch.setattr(
+        tui, "confirm_deletions", lambda paths, where, _reader=None: ["scratch.txt"]
+    )
     _mirror.handle("local", ctx, fake_api, out, yes=False, dry_run=False)
 
     assert not (repo / "scratch.txt").exists()  # local file removed
