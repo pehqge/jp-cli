@@ -24,11 +24,11 @@ dependencies** (pure Python standard library), and runs anywhere Python 3.9+
 runs — macOS, Windows, Linux.
 
 ```console
-$ jp clone https://jupyter.example.com/user/you/lab/tree/privado
-cloning privado -> ./privado
+$ jp clone https://jupyter.example.com/user/you/lab/tree/your-folder
+cloning your-folder -> ./your-folder
 ✓ clone: 12 transferred
 
-$ cd privado
+$ cd your-folder
 $ # ...edit files locally...
 $ jp push
   push: train.py
@@ -149,11 +149,11 @@ Copy the URL of the folder from your browser's address bar — the `lab/tree/...
 URL works directly:
 
 ```bash
-jp clone https://jupyter.example.com/user/<you>/lab/tree/privado
-cd privado
+jp clone https://jupyter.example.com/user/<you>/lab/tree/your-folder
+cd your-folder
 ```
 
-That creates a `privado/` folder with a `.jp/` workspace inside (like `.git/`)
+That creates a `your-folder/` folder with a `.jp/` workspace inside (like `.git/`)
 and downloads the remote tree. If you saved more than one credential, `jp` asks
 which one to use; with a single one it just uses it. The choice is remembered in
 the workspace (`jp clone … --credential <name>` to skip the prompt).
