@@ -5,6 +5,26 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.0](https://github.com/pehqge/jp-cli/compare/v0.1.0...v0.2.0) (2026-05-31)
+
+
+### Features
+
+* **config:** activate color setting and add dotfile "protect" policy ([38c9ac7](https://github.com/pehqge/jp-cli/commit/38c9ac7ebe963156e0eb92015ec98c147d617a00))
+* named credentials with interactive jp login ([ec290db](https://github.com/pehqge/jp-cli/commit/ec290db9233c427a7150ecebb3cfad836d4b0e68))
+
+
+### Bug Fixes
+
+* add top-level release-type to release-please config ([695d456](https://github.com/pehqge/jp-cli/commit/695d456d42511a371a33bad1d3e327af61c45b88))
+* tag releases as vX.Y.Z without component prefix ([c2e9794](https://github.com/pehqge/jp-cli/commit/c2e9794065feb93f13afa24a947f5db26bae820c))
+* **tui:** repair interactive settings render and add navigation hints ([0e6b673](https://github.com/pehqge/jp-cli/commit/0e6b673ab1bab1ad4e396679b1874b1284b93cf7))
+
+
+### Documentation
+
+* replace real JupyterHub URL with generic example placeholder ([54612b7](https://github.com/pehqge/jp-cli/commit/54612b7e269d8e8f2c1e4757c6427aeaec625314))
+
 ## [Unreleased]
 
 ### Added
