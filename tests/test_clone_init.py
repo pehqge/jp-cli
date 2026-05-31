@@ -14,6 +14,7 @@ from jp.errors import AuthError, UsageError
 @pytest.fixture
 def home(tmp_path, monkeypatch):
     monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("USERPROFILE", str(tmp_path))  # Windows: expanduser uses USERPROFILE, not HOME
     monkeypatch.delenv("JP_TOKEN", raising=False)
     monkeypatch.delenv("JP_TOKEN_FILE", raising=False)
     monkeypatch.setenv("JP_NO_TUI", "1")  # force non-interactive selection paths
