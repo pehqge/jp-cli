@@ -35,7 +35,7 @@ _GUIDE_URL = "https://github.com/pehqge/jp-cli/blob/main/docs/vscode-remote-cwd.
 # from the folder name. ``__vsc_ipynb_file__`` is the local notebook path that
 # VS Code injects into the kernel namespace; we translate it to the mirrored
 # remote directory and ``chdir`` there before each cell runs.
-_STARTUP_FILE = '''import os
+_STARTUP_FILE = """import os
 from pathlib import Path
 
 JP_LOCAL_ROOT = {local_root!r}   # your local jp workspace root
@@ -64,12 +64,12 @@ def _jp_autocwd(info=None):
 
 
 get_ipython().events.register("pre_run_cell", _jp_autocwd)
-'''
+"""
 
 # The snippet the user pastes into a notebook cell: it writes ``_STARTUP_FILE``
 # into the IPython startup directory, where it runs automatically for every
 # kernel from then on.
-_INSTALLER = '''from pathlib import Path
+_INSTALLER = """from pathlib import Path
 
 SCRIPT = {script!r}
 
@@ -78,7 +78,7 @@ d.mkdir(parents=True, exist_ok=True)
 (d / "50-jp-autocwd.py").write_text(SCRIPT)
 print("installed:", d / "50-jp-autocwd.py")
 print("Now restart the kernel; it runs automatically for every notebook.")
-'''
+"""
 
 
 def add_parser(subparsers: argparse._SubParsersAction) -> None:
@@ -145,9 +145,7 @@ def run(args: argparse.Namespace) -> int:
 
     ui.heading("Auto-cwd for a VS Code remote kernel")
     ui.out("")
-    ui.out(
-        f"Prefix '{ctx.cfg.prefix}'. The setup snippet is ready -- paste it into one cell"
-    )
+    ui.out(f"Prefix '{ctx.cfg.prefix}'. The setup snippet is ready -- paste it into one cell")
     ui.out("on your remote kernel, run it once, then restart the kernel. Done once, it")
     ui.out("works for every notebook here.")
     ui.out("")
