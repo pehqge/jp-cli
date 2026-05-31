@@ -6,7 +6,7 @@
 
 <p align="center">
   <a href="https://github.com/pehqge/jp-cli/actions/workflows/ci.yml"><img src="https://github.com/pehqge/jp-cli/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
-  <a href="https://github.com/pehqge/jp-cli/releases/latest"><img src="https://img.shields.io/badge/release-v0.2.0-blue" alt="Release"></a> <!-- x-release-please-version -->
+  <a href="https://github.com/pehqge/jp-cli/releases/latest"><img src="https://img.shields.io/badge/release-v0.3.0" alt="Release"></a> <!-- x-release-please-version -->
   <img src="https://img.shields.io/badge/python-3.9%2B-blue" alt="Python 3.9+">
   <a href="https://github.com/pehqge/jp-cli/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-MIT-yellow" alt="License: MIT"></a>
   <img src="https://img.shields.io/badge/dependencies-zero-brightgreen" alt="Zero dependencies">
