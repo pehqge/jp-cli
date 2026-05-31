@@ -1,4 +1,4 @@
-<h1 align="center">jp</h1>
+<h1 align="center">jpsync</h1>
 
 <p align="center">
   <em>A git-like CLI to safely sync local folders with a remote JupyterHub — zero dependencies, pure Python.</em>
