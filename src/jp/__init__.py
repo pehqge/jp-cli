@@ -10,7 +10,7 @@ import contextlib
 
 __all__ = ["__version__"]
 
-__version__ = "0.1.0"
+__version__ = "0.1.0"  # x-release-please-version
 
 try:  # Prefer the installed distribution's version when present.
     from importlib.metadata import PackageNotFoundError

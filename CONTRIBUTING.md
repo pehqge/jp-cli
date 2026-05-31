@@ -102,11 +102,48 @@ other secrets into an issue.
 
 ## Releasing (maintainers)
 
-1. Bump `__version__` in `src/jp/__init__.py`.
-2. Move the `[Unreleased]` changes in `CHANGELOG.md` under a new version
-   heading with the date.
-3. Tag `vX.Y.Z` and push the tag. The release workflow builds the wheel, sdist,
-   `jp.pyz`, and per-OS binaries, publishes to PyPI via Trusted Publishing, and
-   creates a GitHub Release with the artifacts and `SHA256SUMS`.
+Releases are automated with
+[release-please](https://github.com/googleapis/release-please). You do **not**
+bump the version or edit the changelog by hand.
+
+1. Land changes on `main` using **Conventional Commits** (see below). On every
+   push to `main`, release-please opens (or updates) a single **release PR**
+   that bumps `__version__` in `src/jp/__init__.py` and rewrites `CHANGELOG.md`
+   based on the commits since the last release.
+2. When you want to ship, **merge that release PR**. release-please then creates
+   the `vX.Y.Z` git tag.
+3. The tag triggers `release.yml`, which builds the wheel, sdist, `jp.pyz`, and
+   per-OS binaries, publishes to PyPI via Trusted Publishing (when enabled), and
+   creates a GitHub Release with the artifacts and `SHA256SUMS`. From there
+   `jp update` sees the new release.
+
+### Conventional Commits
+
+release-please derives the next version and the changelog from commit message
+prefixes, so commits **must** follow [Conventional
+Commits](https://www.conventionalcommits.org/):
+
+| Prefix | Effect on version | Changelog section |
+|---|---|---|
+| `fix: …` | patch (`0.1.0` → `0.1.1`) | Bug Fixes |
+| `feat: …` | minor (`0.1.0` → `0.2.0`) | Features |
+| `feat!: …` or a `BREAKING CHANGE:` footer | major (`0.1.0` → `1.0.0`)¹ | ⚠ Breaking |
+| `docs:`, `chore:`, `refactor:`, `test:`, `ci:`, `perf:`, `style:` | no bump | (most hidden) |
+
+¹ While the project is pre-1.0, a breaking change bumps the **minor**, not the
+major (configured via `bump-minor-pre-major`).
+
+Examples:
+
+```
+feat: add named credentials with interactive jp login
+fix: resolve token path for local credentials before global
+docs: document the release-please flow
+feat!: drop support for the legacy ~/.jupyter_ufsc_token path
+```
+
+Scope is optional (`feat(login): …`). Keep the subject imperative and concise;
+put the "why" in the body. Squash-merging a PR? Make the **PR title** a valid
+conventional-commit line — that becomes the squashed commit message.
 
 Thanks again for contributing!

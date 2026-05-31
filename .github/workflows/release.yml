@@ -3,6 +3,8 @@ name: Release
 on:
   push:
     tags: ["v*"]
+  # Manual fallback: run the build/publish against an existing tag if needed.
+  workflow_dispatch:
 
 permissions:
   contents: write
