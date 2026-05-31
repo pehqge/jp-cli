@@ -1,0 +1,54 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="640" viewBox="0 0 1280 640">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0d1117"/>
+      <stop offset="1" stop-color="#161b22"/>
+    </linearGradient>
+    <linearGradient id="title" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#58a6ff"/>
+      <stop offset="1" stop-color="#79c0ff"/>
+    </linearGradient>
+  </defs>
+  <rect width="1280" height="640" fill="url(#bg)"/>
+  <rect x="0" y="0" width="10" height="640" fill="#58a6ff"/>
+
+  <text x="86" y="200" font-family="'SF Mono','Menlo','DejaVu Sans Mono',monospace" font-size="120" font-weight="700" fill="url(#title)">jpsync</text>
+  <text x="92" y="262" font-family="'SF Pro Display','Helvetica Neue',Arial,sans-serif" font-size="34" fill="#c9d1d9">A git-like CLI to sync local folders with a remote JupyterHub</text>
+  <text x="92" y="312" font-family="'SF Pro Display','Helvetica Neue',Arial,sans-serif" font-size="24" fill="#8b949e">Edit on your laptop · run on the remote GPUs · pull results back — no SSH needed</text>
+
+  <g transform="translate(90,388)">
+        <rect width="90" height="38" rx="8" fill="#1f2630" stroke="#30363d"/>
+        <text x="45" y="25" text-anchor="middle" font-family="'SF Mono','Menlo','DejaVu Sans Mono',monospace" font-size="17" fill="#c9d1d9">jp clone</text>
+      </g>
+  <g transform="translate(194,388)">
+        <rect width="78" height="38" rx="8" fill="#1f2630" stroke="#30363d"/>
+        <text x="39" y="25" text-anchor="middle" font-family="'SF Mono','Menlo','DejaVu Sans Mono',monospace" font-size="17" fill="#c9d1d9">jp push</text>
+      </g>
+  <g transform="translate(286,388)">
+        <rect width="78" height="38" rx="8" fill="#1f2630" stroke="#30363d"/>
+        <text x="39" y="25" text-anchor="middle" font-family="'SF Mono','Menlo','DejaVu Sans Mono',monospace" font-size="17" fill="#c9d1d9">jp pull</text>
+      </g>
+  <g transform="translate(378,388)">
+        <rect width="102" height="38" rx="8" fill="#1f2630" stroke="#30363d"/>
+        <text x="51" y="25" text-anchor="middle" font-family="'SF Mono','Menlo','DejaVu Sans Mono',monospace" font-size="17" fill="#c9d1d9">jp status</text>
+      </g>
+  <g transform="translate(494,388)">
+        <rect width="78" height="38" rx="8" fill="#1f2630" stroke="#30363d"/>
+        <text x="39" y="25" text-anchor="middle" font-family="'SF Mono','Menlo','DejaVu Sans Mono',monospace" font-size="17" fill="#c9d1d9">jp diff</text>
+      </g>
+  <g transform="translate(90,470)">
+        <circle cx="6" cy="20" r="5" fill="#3fb950"/>
+        <text x="20" y="26" font-family="'SF Pro Display','Helvetica Neue',Arial,sans-serif" font-size="20" fill="#8b949e">Zero dependencies</text>
+      </g>
+  <g transform="translate(343,470)">
+        <circle cx="6" cy="20" r="5" fill="#3fb950"/>
+        <text x="20" y="26" font-family="'SF Pro Display','Helvetica Neue',Arial,sans-serif" font-size="20" fill="#8b949e">Safe by default</text>
+      </g>
+  <g transform="translate(574,470)">
+        <circle cx="6" cy="20" r="5" fill="#3fb950"/>
+        <text x="20" y="26" font-family="'SF Pro Display','Helvetica Neue',Arial,sans-serif" font-size="20" fill="#8b949e">Pure Python 3.9+</text>
+      </g>
+
+  <text x="90" y="588" font-family="'SF Mono','Menlo','DejaVu Sans Mono',monospace" font-size="24" fill="#8b949e">$ <tspan fill="#3fb950">pipx install</tspan> <tspan fill="#c9d1d9">jpsync</tspan></text>
+  <text x="1194" y="588" text-anchor="end" font-family="'SF Pro Display','Helvetica Neue',Arial,sans-serif" font-size="22" fill="#30363d">github.com/pehqge/jpsync</text>
+</svg>
