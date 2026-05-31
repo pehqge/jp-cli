@@ -49,6 +49,7 @@ function hero() {
   cmd("status", "show local/remote sync status (read-only)");
   cmd("diff", "show unified diffs of changed files (read-only)");
   cmd("rm", "delete a path on the remote (gated)");
+  cmd("terminal", "open the remote machine's shell in this terminal");
   cmd("doctor", "diagnose config, credentials and connectivity");
 
   const H = top + lines.length * lh + 22;

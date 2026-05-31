@@ -1,10 +1,10 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="760" height="454" viewBox="0 0 760 454">
+<svg xmlns="http://www.w3.org/2000/svg" width="760" height="477" viewBox="0 0 760 477">
   <defs>
     <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
       <feDropShadow dx="0" dy="8" stdDeviation="16" flood-color="#000" flood-opacity="0.35"/>
     </filter>
   </defs>
-  <rect width="760" height="454" rx="12" fill="#0d1117" stroke="#30363d" stroke-width="1" filter="url(#shadow)"/>
+  <rect width="760" height="477" rx="12" fill="#0d1117" stroke="#30363d" stroke-width="1" filter="url(#shadow)"/>
   <rect width="760" height="40" rx="12" fill="#161b22"/>
   <rect y="28" width="760" height="12" fill="#161b22"/>
   <circle cx="22" cy="20" r="6" fill="#ff5f56"/>
@@ -27,5 +27,6 @@
     <text x="26" y="354.5" font-family="'SF Mono','Menlo','DejaVu Sans Mono',monospace" font-size="14.5" xml:space="preserve"><tspan fill="#79c0ff">  status   </tspan><tspan fill="#8b949e">show local/remote sync status (read-only)</tspan></text>
     <text x="26" y="377.5" font-family="'SF Mono','Menlo','DejaVu Sans Mono',monospace" font-size="14.5" xml:space="preserve"><tspan fill="#79c0ff">  diff     </tspan><tspan fill="#8b949e">show unified diffs of changed files (read-only)</tspan></text>
     <text x="26" y="400.5" font-family="'SF Mono','Menlo','DejaVu Sans Mono',monospace" font-size="14.5" xml:space="preserve"><tspan fill="#79c0ff">  rm       </tspan><tspan fill="#8b949e">delete a path on the remote (gated)</tspan></text>
-    <text x="26" y="423.5" font-family="'SF Mono','Menlo','DejaVu Sans Mono',monospace" font-size="14.5" xml:space="preserve"><tspan fill="#79c0ff">  doctor   </tspan><tspan fill="#8b949e">diagnose config, credentials and connectivity</tspan></text>
+    <text x="26" y="423.5" font-family="'SF Mono','Menlo','DejaVu Sans Mono',monospace" font-size="14.5" xml:space="preserve"><tspan fill="#79c0ff">  terminal </tspan><tspan fill="#8b949e">open the remote machine's shell in this terminal</tspan></text>
+    <text x="26" y="446.5" font-family="'SF Mono','Menlo','DejaVu Sans Mono',monospace" font-size="14.5" xml:space="preserve"><tspan fill="#79c0ff">  doctor   </tspan><tspan fill="#8b949e">diagnose config, credentials and connectivity</tspan></text>
 </svg>

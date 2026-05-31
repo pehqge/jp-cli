@@ -168,6 +168,20 @@ jp pull            # bring remote changes (e.g. training output) down
 That's it. From any subdirectory of the workspace, `jp` finds its root
 automatically (it walks up looking for `.jp/`, stopping at your home folder).
 
+### Bonus: a shell on the server
+
+Need to actually *run* something on the remote box — install a package, kick off
+training, poke around? Run `jp terminal` from your workspace and your terminal
+becomes the remote machine's shell, right in the mapped folder. No SSH, no setup:
+
+```bash
+jp terminal        # you're now in a remote shell, in this folder
+```
+
+It only opens an ephemeral terminal session (it never touches your files), and
+the session is cleaned up when you exit. See the
+[command reference](docs/commands.md#remote-shell) for the details.
+
 ---
 
 ## Command reference
