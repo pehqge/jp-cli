@@ -23,7 +23,7 @@ jobs:
           python -m build
       - name: Build zipapp
         run: python -m zipapp src -m "jp.cli:main" -p "/usr/bin/env python3" -o dist/jp.pyz
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: python-dist
           path: dist/*
@@ -58,7 +58,7 @@ jobs:
         run: |
           mkdir staged
           copy dist\jp.exe staged\jp-${{ matrix.name }}.exe
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: binary-${{ matrix.name }}
           path: staged/*
