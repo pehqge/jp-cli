@@ -75,6 +75,24 @@ Persist the setting with `jp config set mirror true`, or use `--mirror` /
 Show file-level differences between the local copy and the last synced state
 (and the remote with `--remote`).
 
+## Notebooks
+
+### `jp kernel`
+Set up a VS Code **remote** Jupyter kernel so notebooks run in the right
+directory. When VS Code runs a local `.ipynb` against a remote kernel, the
+kernel's working directory is the server's home, not the notebook's folder, so
+relative paths (`pd.read_excel("dataset/x.xlsx")`) raise `FileNotFoundError`;
+VS Code's `notebookFileRoot` does not apply to remote kernels.
+
+`jp kernel` does **not** touch the remote. It prints a one-time IPython startup
+snippet — pre-filled with this workspace's local root and `prefix` — and copies
+it to your clipboard. You paste it into one cell, run it once, and restart the
+kernel; every notebook in the workspace then starts in the correct directory
+automatically. By default the snippet is only copied (kept out of the output);
+`--script` prints it, and `--no-clipboard` skips copying. Must be run inside a
+workspace. See [vscode-remote-cwd.md](vscode-remote-cwd.md) for the full
+walkthrough, including how to connect VS Code to the remote kernel.
+
 ## Inspection & configuration
 
 ### `jp ls [remote-path]`

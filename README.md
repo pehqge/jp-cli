@@ -186,6 +186,7 @@ automatically (it walks up looking for `.jp/`, stopping at your home folder).
 | `jp config` | Interactive settings editor (see below). Also `config get/set/list`. |
 | `jp ignore [pattern]` | Manage `.jpignore` patterns. |
 | `jp rm <path>` | Delete on the remote — gated, dry-run + typed confirmation. The only deleter. |
+| `jp kernel` | Set up a VS Code remote kernel to run notebooks in the right directory ([guide](docs/vscode-remote-cwd.md)). |
 | `jp doctor` | Diagnose token, connectivity, server status. |
 | `jp update` | Update jp to the latest version. |
 | `jp version` | Print the version (also `jp --version`). |
@@ -345,6 +346,7 @@ remote deletes are opt-in (mirror mode) and confirmed file-by-file.
 - **`your JupyterHub server appears to be stopped`** — open the Hub UI and click *Start My Server*.
 - **`authentication failed` / HTTP 403** — your token expired; create a new one and `jp login` again (or update the token file).
 - **A big upload times out** — raise the timeout: `jp config set timeout 120`.
+- **`FileNotFoundError` / relative paths fail in VS Code with a remote kernel** — the kernel starts in the server's home, not your notebook's folder. Run `jp kernel` (see the [VS Code remote-kernel guide](docs/vscode-remote-cwd.md)).
 
 Run `jp doctor` for a guided check.
 
