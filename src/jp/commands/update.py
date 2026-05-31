@@ -71,6 +71,45 @@ def _running_as_binary() -> bool:
     return bool(getattr(sys, "frozen", False))
 
 
+def _editable_path_from_direct_url(raw: str) -> str | None:
+    """Local path if a PEP 610 ``direct_url.json`` describes an editable install.
+
+    Returns the source directory (so we can point the user at ``git pull``), or
+    None for a normal registry/VCS install.
+    """
+    try:
+        info = json.loads(raw)
+    except ValueError:
+        return None
+    if not (info.get("dir_info") or {}).get("editable"):
+        return None
+    url = str(info.get("url") or "")
+    if not url.startswith("file://"):
+        return None
+    from urllib.parse import unquote, urlparse
+
+    return unquote(urlparse(url).path) or None
+
+
+def _editable_source() -> str | None:
+    """If this jp is an editable/development install, return its source directory.
+
+    An editable install (``uv tool install --editable``, ``pip install -e``,
+    ``pipx install -e``) is just a link to a local checkout, so ``upgrade`` is a
+    no-op there -- the way to update is ``git pull`` in that checkout.
+    """
+    from importlib import metadata
+
+    for name in (_PYPI_NAME, "jp"):
+        try:
+            raw = metadata.distribution(name).read_text("direct_url.json")
+        except (metadata.PackageNotFoundError, OSError, ValueError):
+            continue
+        if raw and (path := _editable_path_from_direct_url(raw)):
+            return path
+    return None
+
+
 def _detect_manager() -> str | None:
     """Best-effort detection of the tool that installed this jp."""
     exe = (shutil.which("jp") or sys.argv[0] or "").replace("\\", "/").lower()
@@ -124,6 +163,14 @@ def run(args: argparse.Namespace) -> int:
         ui.info(f"a newer version is available: {latest}")
 
     if args.check:
+        return EXIT_OK
+
+    # A development (editable) install is a link to a local checkout; the package
+    # manager has nothing to upgrade, so update there means `git pull`.
+    editable = _editable_source()
+    if editable:
+        ui.info("jp is a development (editable) install -- the package upgrade does not apply.")
+        ui.detail(f"  update it with:  git -C {editable} pull")
         return EXIT_OK
 
     if _running_as_binary():
