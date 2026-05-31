@@ -10,6 +10,7 @@
   <img src="https://img.shields.io/badge/python-3.9%2B-blue" alt="Python 3.9+">
   <a href="https://github.com/pehqge/jpsync/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-MIT-yellow" alt="License: MIT"></a>
   <img src="https://img.shields.io/badge/dependencies-zero-brightgreen" alt="Zero dependencies">
+  <a href="https://github.com/sponsors/pehqge"><img src="https://img.shields.io/badge/sponsor-%E2%9D%A4-db61a2?logo=githubsponsors&logoColor=white" alt="Sponsor"></a>
 </p>
 
 ---
@@ -366,6 +367,21 @@ Run `jp doctor` for a guided check.
 Contributions welcome — see [CONTRIBUTING.md](CONTRIBUTING.md) and the
 [Code of Conduct](CODE_OF_CONDUCT.md). The project is standard-library only;
 please keep it dependency-free.
+
+## Support
+
+`jpsync` is free and open source. If it saves you time on your JupyterHub
+workflow, you can support its development — thank you! ☕
+
+<p align="center">
+  <a href="https://github.com/sponsors/pehqge">
+    <img src="https://img.shields.io/badge/Sponsor-EA4AAA?style=for-the-badge&logo=githubsponsors&logoColor=white" alt="Sponsor on GitHub">
+  </a>
+  &nbsp;&nbsp;
+  <a href="https://www.buymeacoffee.com/pehqge">
+    <img src="https://img.shields.io/badge/Buy%20me%20a%20coffee-FFDD00?style=for-the-badge&logo=buymeacoffee&logoColor=black" alt="Buy me a coffee">
+  </a>
+</p>
 
 ## License
 
