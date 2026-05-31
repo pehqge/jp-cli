@@ -94,6 +94,16 @@ class StatusResult:
     detail: str = ""
 
 
+@dataclass
+class TerminalSession:
+    """A freshly created remote terminal (see :meth:`Api.create_terminal`)."""
+
+    name: str
+    # True when the server honoured the requested ``cwd`` natively. False means
+    # an older server ignored/rejected it and the caller should ``cd`` manually.
+    cwd_applied: bool
+
+
 def _is_notebook_path(api_path: str) -> bool:
     name = api_path.rsplit("/", 1)[-1].lower()
     return name.endswith(_NOTEBOOK_EXTS)
@@ -516,6 +526,73 @@ class Api:
         except (TimeoutError, OSError) as exc:
             raise NetworkError(f"could not reach the server: {exc}") from exc
         return StatusResult(up=False, detail="unknown")
+
+    # --- terminals (ephemeral PTY sessions; NEVER touch the Contents API) ----
+    def create_terminal(self, cwd: str | None = None) -> TerminalSession:
+        """Create a remote terminal via ``POST /api/terminals``; return its name.
+
+        This is the ONLY non-file remote call jp makes: a terminal is an
+        ephemeral PTY session, not a path -- it never reads, writes, moves or
+        deletes a file, so the path-jail does not apply.
+
+        When ``cwd`` is given we request it natively (modern
+        ``jupyter_server_terminals`` resolves it relative to the server root,
+        which is exactly what the workspace prefix is relative to). An older
+        server that does not understand the field answers 400/500; we then retry
+        with no body and report ``cwd_applied=False`` so the caller can fall back
+        to a manual ``cd``. Terminals being disabled (401/403 -> AuthError, or
+        404 -> ApiError) propagates unchanged.
+        """
+        if cwd:
+            try:
+                data = self._request("POST", "api/terminals", body={"cwd": cwd})
+                return TerminalSession(self._terminal_name(data), cwd_applied=True)
+            except ApiError as exc:
+                # 400/500 most likely means the server rejected the cwd field;
+                # retry without it. Anything else (404 disabled, etc.) propagates.
+                if exc.status not in (400, 500):
+                    raise
+        data = self._request("POST", "api/terminals")
+        return TerminalSession(self._terminal_name(data), cwd_applied=False)
+
+    def delete_terminal(self, name: str) -> None:
+        """Delete a terminal session by name (idempotent: 404 is tolerated).
+
+        The caller passes ONLY the name it created itself, so this can never
+        affect another user's or another session's terminal.
+        """
+        try:
+            self._request("DELETE", f"api/terminals/{name}")
+        except ApiError as exc:
+            if exc.status == 404:
+                return
+            raise
+
+    def terminal_ws_url(self, name: str) -> str:
+        """Derive the ``wss://.../terminals/websocket/<name>`` URL.
+
+        ``base_url`` is the single-user server root; the token is NEVER put in
+        the URL (it travels in the Authorization header on the handshake). A
+        trailing ``/api`` is stripped defensively for back-compat with configs
+        that stored it.
+        """
+        server = self.base_url
+        if server.endswith("/api"):
+            server = server[:-4]
+        server = server.rstrip("/")
+        if server.startswith("https://"):
+            ws_base = "wss://" + server[len("https://") :]
+        elif server.startswith("http://"):
+            ws_base = "ws://" + server[len("http://") :]
+        else:
+            raise NetworkError(f"unsupported base_url scheme for websocket: {server!r}")
+        return f"{ws_base}/terminals/websocket/{name}"
+
+    @staticmethod
+    def _terminal_name(data: Any) -> str:
+        if isinstance(data, dict) and data.get("name"):
+            return str(data["name"])
+        raise ApiError("server did not return a terminal name")
 
     # --- helpers ------------------------------------------------------------
     @staticmethod

@@ -36,7 +36,11 @@ afterthought. This document explains the guarantees and how they are enforced.
    that a workspace which is also a git repo can never commit the token by
    accident. All output passes through a redaction layer that scrubs the token
    (and server filesystem paths) from logs and error messages. TLS certificates
-   are always verified; `jp` refuses to send a token over plain HTTP.
+   are always verified; `jp` refuses to send a token over plain HTTP. The two
+   exceptions that put the token in a URL are strictly opt-in and confirmed:
+   `jp kernel --link`, and the Windows-only browser fallback of `jp terminal`
+   (which has no PTY there). On POSIX, `jp terminal` sends the token only in the
+   `Authorization` header — including on the websocket handshake.
 
 ## Why these specific rules
 

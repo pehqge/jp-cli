@@ -100,6 +100,38 @@ Must be run inside a workspace. See
 [vscode-remote-cwd.md](vscode-remote-cwd.md) for the full walkthrough, including
 how to connect VS Code to the remote kernel.
 
+## Remote shell
+
+### `jp terminal`
+Turn your local terminal into the **remote machine's shell**, in one command and
+with no setup. It creates an ephemeral Jupyter terminal on the server (the same
+thing the web UI's "New → Terminal" opens), connects to it, and proxies your
+terminal to it — so you get a real, interactive remote shell, starting in this
+workspace's mapped folder.
+
+It is intentionally narrow and safe on a shared server: the **only** remote calls
+it makes are creating and deleting an ephemeral terminal session
+(`POST`/`DELETE /api/terminals`). It never reads, writes, moves, or deletes a
+file, and the session it creates is always deleted on exit (only that session,
+never anyone else's). The token is sent only in the `Authorization` header on the
+websocket handshake, never in a URL.
+
+- `--no-cd` starts in the server's default directory instead of the workspace
+  folder.
+- `-y/--yes` skips the one-time confirmation prompt.
+- Press **Ctrl-]** to force-disconnect (telnet convention) if the remote shell
+  ever wedges; `exit`/Ctrl-D end it normally.
+- The websocket client is hand-rolled on the standard library, so `jp` keeps its
+  zero-dependency promise.
+- Requires a POSIX terminal (`termios`). On Windows there is no raw PTY, so the
+  command falls back to opening the Jupyter web UI (use New → Terminal there);
+  that fallback shows a token-bearing URL and asks for confirmation first.
+- Needs server-side terminals to be enabled (most Jupyter Server / Lab
+  deployments enable them by default); if they are disabled, `jp terminal` says
+  so and exits without creating anything.
+
+Must be run inside a workspace.
+
 ## Inspection & configuration
 
 ### `jp ls [remote-path]`

@@ -16,6 +16,7 @@ from . import (
     push,
     rm,
     status,
+    terminal,
     update,
     version,
 )
@@ -33,6 +34,7 @@ ALL = [
     ignore_cmd,
     rm,
     kernel,
+    terminal,
     doctor,
     update,
     version,

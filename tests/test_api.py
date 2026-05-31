@@ -304,3 +304,100 @@ def test_delete_nonempty_dir_400_is_reraised_with_hint(monkeypatch):
     with pytest.raises(ApiError) as ei:
         api.delete("users/alice/sub")
     assert "recursive" in ei.value.message.lower()
+
+
+# --------------------------------------------------------------------------- #
+# terminals: ephemeral PTY sessions (POST/DELETE /api/terminals only)
+# --------------------------------------------------------------------------- #
+def test_create_terminal_sends_cwd_and_returns_name(monkeypatch):
+    api = _api()
+    captured = {}
+
+    def fake_urlopen(req, timeout=None, context=None):
+        captured["method"] = req.get_method()
+        captured["url"] = req.full_url
+        captured["body"] = json.loads(req.data.decode())
+        return _FakeResp(json.dumps({"name": "1"}).encode(), status=200)
+
+    monkeypatch.setattr(urllib.request, "urlopen", fake_urlopen)
+    sess = api.create_terminal(cwd="projetos/x")
+    assert sess.name == "1"
+    assert sess.cwd_applied is True
+    assert captured["method"] == "POST"
+    assert captured["url"].endswith("/api/terminals")
+    assert captured["body"] == {"cwd": "projetos/x"}
+
+
+def test_create_terminal_falls_back_when_server_rejects_cwd(monkeypatch):
+    api = _api()
+    calls: list[dict | None] = []
+
+    def fake_urlopen(req, timeout=None, context=None):
+        body = json.loads(req.data.decode()) if req.data else None
+        calls.append(body)
+        # First call carries cwd and is rejected (older server -> 500); the
+        # retry with no body succeeds.
+        if body is not None and "cwd" in body:
+            raise urllib.error.HTTPError(
+                req.full_url, 500, "Server Error", {}, io.BytesIO(b"unexpected kwarg cwd")
+            )
+        return _FakeResp(json.dumps({"name": "7"}).encode())
+
+    monkeypatch.setattr(urllib.request, "urlopen", fake_urlopen)
+    sess = api.create_terminal(cwd="projetos/x")
+    assert sess.name == "7"
+    assert sess.cwd_applied is False  # caller must cd manually
+    assert calls == [{"cwd": "projetos/x"}, None]  # tried cwd, then retried bare
+
+
+def test_create_terminal_disabled_propagates(monkeypatch):
+    api = _api()
+
+    def fake_urlopen(req, timeout=None, context=None):
+        # Terminals disabled on the server -> 404, must NOT be swallowed/retried.
+        raise urllib.error.HTTPError(
+            req.full_url, 404, "Not Found", {}, io.BytesIO(b"No such handler")
+        )
+
+    monkeypatch.setattr(urllib.request, "urlopen", fake_urlopen)
+    with pytest.raises(ApiError) as ei:
+        api.create_terminal(cwd="projetos/x")
+    assert ei.value.status == 404
+
+
+def test_create_terminal_403_is_auth_error(monkeypatch):
+    api = _api()
+
+    def fake_urlopen(req, timeout=None, context=None):
+        raise urllib.error.HTTPError(
+            req.full_url, 403, "Forbidden", {}, io.BytesIO(b'{"message":"Forbidden"}')
+        )
+
+    monkeypatch.setattr(urllib.request, "urlopen", fake_urlopen)
+    with pytest.raises(AuthError):
+        api.create_terminal(cwd="projetos/x")
+
+
+def test_delete_terminal_uses_name_and_tolerates_404(monkeypatch):
+    api = _api()
+    seen: list[tuple[str, str]] = []
+
+    def fake_urlopen(req, timeout=None, context=None):
+        seen.append((req.get_method(), req.full_url))
+        if req.full_url.endswith("/api/terminals/missing"):
+            raise urllib.error.HTTPError(req.full_url, 404, "Not Found", {}, io.BytesIO(b"gone"))
+        return _FakeResp(b"", status=204)
+
+    monkeypatch.setattr(urllib.request, "urlopen", fake_urlopen)
+    api.delete_terminal("3")
+    api.delete_terminal("missing")  # 404 tolerated, no raise
+    assert seen[0] == ("DELETE", "https://hub.example/user/alice/api/terminals/3")
+
+
+def test_terminal_ws_url_derivation():
+    api = _api()  # base_url = https://hub.example/user/alice
+    assert api.terminal_ws_url("1") == "wss://hub.example/user/alice/terminals/websocket/1"
+    # http -> ws, and a stray trailing /api is stripped. (No token over http,
+    # so the constructor's cleartext-credential guard is satisfied with "".)
+    plain = Api("http://localhost:8888/api", "")
+    assert plain.terminal_ws_url("ab") == "ws://localhost:8888/terminals/websocket/ab"
