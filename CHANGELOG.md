@@ -5,6 +5,21 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.1](https://github.com/pehqge/jpsync/compare/v1.0.0...v1.0.1) (2026-05-31)
+
+
+### Documentation
+
+* add a small sponsor badge to the header row ([b4358fd](https://github.com/pehqge/jpsync/commit/b4358fde5fef1542824984e4db6a18682b69b487))
+* add animated demo gif to the workflow section ([0c642c4](https://github.com/pehqge/jpsync/commit/0c642c4a31c62d79728b65a6419a5485782ba26e))
+* add Support section + FUNDING.yml (Sponsors + Buy Me a Coffee) ([dc76f11](https://github.com/pehqge/jpsync/commit/dc76f117d2297e3bbbc30d835d36ff69e3d10791))
+* add Support section with sponsor links ([7008195](https://github.com/pehqge/jpsync/commit/7008195c093a438639044ab76457529038c03a90))
+* add terminal hero + social preview, switch to live PyPI badges ([fc2d788](https://github.com/pehqge/jpsync/commit/fc2d788be6e27efa30fab8b4f1ada421364f78ff))
+* clean up badge row (compact python, drop empty downloads) ([f03173b](https://github.com/pehqge/jpsync/commit/f03173b5243e14c0d3fae4f6e1c69aa9e6edf329))
+* simplify install section to two recommended methods ([9f7f90c](https://github.com/pehqge/jpsync/commit/9f7f90c9d04cc70f1bb4f78be98b35a80620c918))
+* simplify install section to two recommended methods ([035348a](https://github.com/pehqge/jpsync/commit/035348a667d7bfcf749c3c038befdddeaa8db39f))
+* swap support badges for for-the-badge style ([32e1835](https://github.com/pehqge/jpsync/commit/32e183512d5939fb64e82611bfc46dd1b197bc88))
+
 ## [1.0.0](https://github.com/pehqge/jpsync/compare/v0.3.1...v1.0.0) (2026-05-31)
 
 
