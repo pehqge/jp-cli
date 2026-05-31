@@ -173,6 +173,10 @@ jp push            # send local changes up
 jp pull            # bring remote changes (e.g. training output) down
 ```
 
+<p align="center">
+  <img src="assets/demo.gif" alt="jp demo: clone a JupyterHub folder, edit locally, push, then pull a teammate's results" width="760">
+</p>
+
 That's it. From any subdirectory of the workspace, `jp` finds its root
 automatically (it walks up looking for `.jp/`, stopping at your home folder).
 
