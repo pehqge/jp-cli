@@ -37,6 +37,12 @@ class Config:
     # Network timeout (seconds) for API calls; generous because the shared box
     # can be slow and there is no chunking for large uploads (see docs/architecture.md).
     timeout: float = 30.0
+    # Mirror mode: when True, push/pull may DELETE files that exist on one side
+    # and not the other -- but ALWAYS interactively, file by file, defaulting to
+    # keep. Off by default; deletion is never silent. See docs/architecture.md.
+    mirror: bool = False
+    # Colored output: auto (tty only) | always | never.
+    color: str = "auto"
     extra: dict[str, Any] = field(default_factory=dict)
 
     @property
@@ -53,6 +59,8 @@ class Config:
             "prefix": self.prefix,
             "dotfiles": self.dotfiles,
             "timeout": self.timeout,
+            "mirror": self.mirror,
+            "color": self.color,
         }
         if self.token_path:
             data["token_path"] = self.token_path
@@ -61,7 +69,7 @@ class Config:
 
     @classmethod
     def from_json(cls, data: dict[str, Any]) -> Config:
-        known = {"base_url", "prefix", "token_path", "dotfiles", "timeout"}
+        known = {"base_url", "prefix", "token_path", "dotfiles", "timeout", "mirror", "color"}
         extra = {k: v for k, v in data.items() if k not in known}
         base_url = str(data.get("base_url", "")).strip()
         prefix = str(data.get("prefix", "")).strip()
@@ -76,12 +84,17 @@ class Config:
             timeout = float(data.get("timeout", 30.0))
         except (TypeError, ValueError):
             timeout = 30.0
+        color = str(data.get("color", "auto"))
+        if color not in ("auto", "always", "never"):
+            color = "auto"
         cfg = cls(
             base_url=base_url.rstrip("/"),
             prefix=prefix,
             token_path=str(data.get("token_path", "")),
             dotfiles=str(data.get("dotfiles", "skip")) or "skip",
             timeout=timeout,
+            mirror=bool(data.get("mirror", False)),
+            color=color,
             extra=extra,
         )
         return cfg

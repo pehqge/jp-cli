@@ -1,272 +1,314 @@
-# jp
+<h1 align="center">jp</h1>
 
-> A git-like CLI to sync local folders with a remote JupyterHub — zero dependencies, pure Python.
+<p align="center">
+  <em>A git-like CLI to safely sync local folders with a remote JupyterHub — zero dependencies, pure Python.</em>
+</p>
 
-[![CI](https://github.com/pehqge/jp-cli/actions/workflows/ci.yml/badge.svg)](https://github.com/pehqge/jp-cli/actions/workflows/ci.yml)
-[![PyPI version](https://img.shields.io/pypi/v/jp-cli.svg)](https://pypi.org/project/jp-cli/)
-[![Python versions](https://img.shields.io/pypi/pyversions/jp-cli.svg)](https://pypi.org/project/jp-cli/)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://github.com/pehqge/jp-cli/blob/main/LICENSE)
-
-`jp` lets you `clone`, `pull`, and `push` against a JupyterHub server the same
-way you would with `git` — but instead of a git remote, it talks to the
-[Jupyter Contents API](https://jupyter-server.readthedocs.io/en/latest/developers/contents.html).
-Edit notebooks and scripts in your own editor, keep a local backup, work
-offline, and put your remote work under real version control.
-
-> **Note on naming.** The PyPI package is `jp-cli` (the name `jp` was taken),
-> but the command you actually run is `jp`.
+<p align="center">
+  <a href="https://github.com/pehqge/jp-cli/actions/workflows/ci.yml"><img src="https://github.com/pehqge/jp-cli/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <a href="https://github.com/pehqge/jp-cli/releases"><img src="https://img.shields.io/github/v/release/pehqge/jp-cli?include_prereleases&sort=semver&label=release" alt="Release"></a>
+  <img src="https://img.shields.io/badge/python-3.9%2B-blue" alt="Python 3.9+">
+  <a href="https://github.com/pehqge/jp-cli/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-MIT-yellow" alt="License: MIT"></a>
+  <img src="https://img.shields.io/badge/dependencies-zero-brightgreen" alt="Zero dependencies">
+</p>
 
 ---
 
-## Why `jp`?
+`jp` keeps a local folder in sync with a directory on a **JupyterHub** server —
+the way `git` keeps you in sync with a remote. You edit notebooks and scripts on
+your laptop, `jp push` to send them up, run your training on the server's GPUs,
+and `jp pull` the results back down.
 
-The Jupyter web UI is clumsy once you have more than a handful of files. If you
-work on a shared JupyterHub (a university lab, a research cluster) you probably
-want to:
-
-- Edit in **your** editor — VS Code, vim, whatever — not the browser.
-- Keep a **local backup** of remote work.
-- Work **offline**, then sync when you reconnect.
-- Wrap the local copy in **real `git`**.
-
-`jp` bridges that gap with a workflow you already know.
-
----
-
-## Demo
+It talks to the JupyterHub REST API directly, has **zero third-party
+dependencies** (pure Python standard library), and runs anywhere Python 3.9+
+runs — macOS, Windows, Linux.
 
 ```console
-$ jp clone https://hub.example.edu/user/pedro/work mywork
-Cloning 'user/pedro/work' into 'mywork'...
-  ↓ notebook.ipynb
-  ↓ data/clean.csv
-  ↓ utils.py
-Done. 3 files, 1 directory.
+$ jp clone https://jupyter.vlab.ufsc.br/user/pedro.gimenez/lab/tree/privado
+cloning privado -> ./privado
+✓ clone: 12 transferred
 
-$ cd mywork
-# ...edit notebook.ipynb in your editor...
-
-$ jp status
-Changes to push:
-  modified   notebook.ipynb
-Up to date with remote otherwise.
-
+$ cd privado
+$ # ...edit files locally...
 $ jp push
-Pushing to 'user/pedro/work'...
-  ↑ notebook.ipynb
-Done. 1 file pushed.
+  push: train.py
+  push: data/config.yaml
+✓ push: 2 transferred, 10 up to date, 0 skipped, 0 conflict(s), 0 deleted, 0 failed
 ```
+
+## Why jp?
+
+- **Git-like workflow** — `jp clone`, `jp status`, `jp push`, `jp pull`. Same muscle memory.
+- **Safe by default** — on a *shared* research machine, jp never deletes remote files unless you explicitly turn that on, and even then it asks you file-by-file. Conflicts are never silently overwritten.
+- **Zero dependencies** — one install, no dependency hell; ships as a wheel, a single `.pyz`, or a standalone binary.
+- **Cross-platform** — macOS, Windows, Linux; Python 3.9 → 3.13.
 
 ---
 
-## Install
+## Installation
 
-`jp` is pure standard-library Python, so any install method below gives you a
-working `jp` command.
+> Recommended: install in an isolated environment with **uv** or **pipx** so the
+> `jp` command lands on your `PATH` without touching system Python.
 
-### Recommended: uv or pipx
-
+**With uv** (fastest):
 ```bash
-# uv (fast, isolated)
 uv tool install jp-cli
-
-# or pipx
-pipx install jp-cli
-
-# or plain pip
-pip install jp-cli
 ```
 
-### Single-file zipapp (needs Python ≥ 3.8)
-
-Download `jp.pyz` from the [latest release](https://github.com/pehqge/jp-cli/releases/latest)
-and run it directly:
-
+**With pipx**:
 ```bash
-python jp.pyz version
-# optionally drop it on your PATH:
-chmod +x jp.pyz && mv jp.pyz ~/.local/bin/jp
+pipx install jp-cli
 ```
 
-### Standalone binary (no Python required)
+**Straight from GitHub** (before the first PyPI release):
+```bash
+pipx install "git+https://github.com/pehqge/jp-cli"
+# or:  uv tool install "git+https://github.com/pehqge/jp-cli"
+```
 
-Grab the binary for your OS from the
-[latest release](https://github.com/pehqge/jp-cli/releases/latest), or use the
-install scripts:
+**Install script (macOS / Linux)** — downloads the standalone binary, no Python needed:
+```bash
+curl -fsSL https://raw.githubusercontent.com/pehqge/jp-cli/main/scripts/install.sh | sh
+```
+
+**Install script (Windows, PowerShell)**:
+```powershell
+powershell -ExecutionPolicy ByPass -c "irm https://raw.githubusercontent.com/pehqge/jp-cli/main/scripts/install.ps1 | iex"
+```
+
+**Single file, no install** — grab `jp.pyz` from the
+[latest release](https://github.com/pehqge/jp-cli/releases/latest) and run it
+with any Python 3.9+:
+```bash
+python jp.pyz --help
+```
+
+Verify:
+```bash
+jp --version
+```
+
+> If `jp: command not found` after a pipx/uv install, run `pipx ensurepath` (or
+> `uv tool update-shell`) and reopen your terminal.
+
+---
+
+## Getting started
+
+### 1. Get your JupyterHub API token
+
+`jp` authenticates with a personal API token from your JupyterHub.
+
+1. Open your JupyterHub in a browser and log in (e.g. `https://jupyter.vlab.ufsc.br`).
+2. Go to the **Token** page — usually the **Token** link in the top bar, or
+   visit `https://<your-hub>/hub/token` directly.
+3. Type a note (e.g. `jp`), leave the scopes blank (full access to what *you*
+   can already do), and click **Request new API token**.
+4. **Copy the token now** — JupyterHub shows it only once.
+
+> Security: the token is like a password for your account. `jp` stores only the
+> *path* to a token file, never the token value, and never logs or commits it.
+
+### 2. Save the token to a file
+
+Put the token in a private file on your machine (not in any repo):
 
 ```bash
 # macOS / Linux
-curl -fsSL https://raw.githubusercontent.com/pehqge/jp-cli/main/scripts/install.sh | sh
+printf '%s\n' 'PASTE_YOUR_TOKEN_HERE' > ~/.jupyter_token
+chmod 600 ~/.jupyter_token
 ```
 
 ```powershell
 # Windows (PowerShell)
-irm https://raw.githubusercontent.com/pehqge/jp-cli/main/scripts/install.ps1 | iex
+'PASTE_YOUR_TOKEN_HERE' | Out-File -Encoding ascii "$HOME\.jupyter_token"
 ```
 
-Always verify what a piped installer does before running it — both scripts are
-short and readable in [`scripts/`](scripts/).
+`jp` looks for a token, in order, from: `--token-path` → `$JP_TOKEN` (the value
+itself, handy for CI) → `$JP_TOKEN_FILE` (a path) → the path saved in your
+workspace config → `~/.config/jp/token`.
 
----
+### 3. Make sure your server is running
 
-## Quickstart
+`jp` talks to your *single-user* server, so it must be started: open JupyterHub
+and, if needed, click **Start My Server**. (`jp doctor` will tell you if it's
+stopped.)
+
+### 4. Clone your folder
+
+Copy the URL of the folder from your browser's address bar — the `lab/tree/...`
+URL works directly:
 
 ```bash
-# 1. Get a token from the Hub UI (Token page) and clone
-jp clone https://hub.example.edu/user/pedro/work
-cd work
-
-# 2. Edit files locally with whatever editor you like
-
-# 3. See what changed
-jp status
-
-# 4. Sync
-jp push      # upload your local changes
-jp pull      # download remote changes
+jp clone https://jupyter.vlab.ufsc.br/user/<you>/lab/tree/privado --token-path ~/.jupyter_token
+cd privado
 ```
 
-First time on a machine, run `jp login` to store your API token (it's tested
-against `/api/me` before being saved). `jp` resolves the token in this order:
-`--token-file` > `$JP_TOKEN_FILE` / `$JUPYTER_TOKEN` > the repo config >
-global config > `~/.jupyter_ufsc_token`. Only the *path* to the token is stored
-in config — the value itself lives in a file with mode `0600` and is **never**
-committed, logged, or printed.
+That creates a `privado/` folder with a `.jp/` workspace inside (like `.git/`),
+records the token *path* in its config, and downloads the remote tree.
+
+### 5. Work like git
+
+```bash
+jp status          # what changed, locally vs the server
+jp push            # send local changes up
+jp pull            # bring remote changes (e.g. training output) down
+```
+
+That's it. From any subdirectory of the workspace, `jp` finds its root
+automatically (it walks up looking for `.jp/`, stopping at your home folder).
 
 ---
 
-## Commands
+## Command reference
 
-| Command | Description |
-|---------|-------------|
-| `jp clone <url> [dir]` | Clone a remote directory into a local folder |
-| `jp init [dir]` | Initialize `.jp/` in an existing directory |
-| `jp login` | Onboard: store an API token (tested against `/api/me`) |
-| `jp pull [path...]` | Download remote changes into the local folder |
-| `jp push [path...]` | Upload local changes to the remote |
-| `jp status [path...]` | Show local vs remote differences (read-only) |
-| `jp ls [remote]` | List remote contents (read-only) |
-| `jp diff [path...]` | Show the content diff for changed files |
-| `jp config [get\|set\|unset\|list]` | Read/write configuration values |
-| `jp ignore [pattern...]` | Manage `.jpignore` patterns |
-| `jp rm --remote <path>` | Delete a remote path (gated; never run by sync) |
-| `jp doctor` | Diagnose token, connectivity, version, perms, clock |
-| `jp version` | Print the version |
+| Command | What it does |
+|---|---|
+| `jp clone <url> [dir]` | Clone a remote Jupyter folder into a new local directory. Accepts a `lab/tree` URL or `--base-url`/`--prefix`. |
+| `jp init <url>` | Turn the current folder into a jp workspace (no download). |
+| `jp login` | Register your token (path only) interactively. |
+| `jp status` | Show local vs. remote differences. Read-only. |
+| `jp push` | Upload local changes. Additive by default. |
+| `jp pull` | Download remote changes. Additive by default. |
+| `jp diff [path]` | Show file-level differences. |
+| `jp ls [remote-path]` | List a remote directory (no local writes). |
+| `jp config` | Interactive settings editor (see below). Also `config get/set/list`. |
+| `jp ignore [pattern]` | Manage `.jpignore` patterns. |
+| `jp rm <path>` | Delete on the remote — gated, dry-run + typed confirmation. The only deleter. |
+| `jp doctor` | Diagnose token, connectivity, server status. |
+| `jp update` | Update jp to the latest version. |
+| `jp version` | Print the version (also `jp --version`). |
 
-Full reference: [`docs/commands.md`](docs/commands.md).
+Global flags: `-q/--quiet`, `--no-color`. Every command has `--help`.
 
-### Exit codes
+### `jp config` — interactive settings
 
-| Code | Meaning |
-|------|---------|
-| `0` | Success |
-| `1` | Generic error |
-| `2` | Usage error (bad arguments) |
-| `3` | Not a `jp` repository |
-| `4` | Auth error (bad/missing token) |
-| `5` | Network error |
-| `6` | Conflict (local and remote both changed) |
-| `7` | Permission denied |
-| `8` | Unsafe path (path-jail violation) |
-| `130` | Interrupted (SIGINT) |
+Run `jp config` with no arguments in a terminal for a settings screen:
+
+```
+  Mirror mode (allow deletes)              false
+> Dotfile policy                           skip
+  Colored output                           auto
+  Network timeout (s)                      30.0
+
+Up/Down move · Space change · i info · / search · Enter save · Esc cancel
+```
+
+- **↑/↓** move · **Space** cycle the value · **i** show help for the selected
+  setting · **/** search · **Enter** save · **Esc** cancel.
+
+For scripts, the classic forms still work: `jp config list`,
+`jp config get <key>`, `jp config set <key> <value>`.
+
+### Mirror mode (deleting files to match the other side)
+
+By default `jp push`/`jp pull` are **additive** — they never delete. If you want
+true mirroring (delete on the remote when you delete locally, and vice-versa),
+turn on **mirror mode**:
+
+```bash
+jp config set mirror true      # persist it, or use --mirror for one run
+jp push --mirror               # one-off
+```
+
+With mirror on, after the normal sync jp finds files that exist on one side but
+not the other and — **always, before deleting anything** — shows you the list
+and lets you choose, with the arrow keys, which to **keep** and which to
+**delete**:
+
+```
+Mirror mode: 2 file(s) exist on remote but not on the other side.
+Choose which to DELETE on remote. Default is KEEP.
+
+> [keep]   old_experiment.py
+  [keep]   scratch.ipynb
+
+Up/Down move · Space toggle · a delete-all · n keep-all · Enter confirm · Esc cancel
+```
+
+Nothing is deleted unless you mark it. In a non-interactive shell, mirror
+deletions are refused unless you pass `--yes`. Conflicts (both sides changed) are
+*never* deleted or overwritten.
+
+### Keeping jp up to date
+
+```bash
+jp update           # detects pipx / uv / pip and upgrades in place
+jp update --check   # just check; don't install
+```
+
+For a standalone binary install, `jp update` prints the one-line reinstall
+command for your OS.
+
+---
+
+## Configuration
+
+Each workspace stores its settings in `.jp/config.json` (JSON, never the token
+value). Keys: `base_url`, `prefix`, `token_path`, `mirror`, `dotfiles`, `color`,
+`timeout`. See [docs/commands.md](docs/commands.md) and
+[docs/architecture.md](docs/architecture.md).
 
 ---
 
 ## Security
 
-`jp` is built to be safe on **shared machines** (lab computers, cluster login
-nodes). The guarantees:
+`jp` is built for a **shared** machine where a mistake can destroy someone
+else's research. The guarantees:
 
-- **Never deletes remote files by default.** Removing something locally does
-  *not* remove it on the server. Remote deletion only happens through an
-  explicit, gated command with confirmation.
-- **Conflicts never overwrite.** If a file changed both locally and remotely,
-  `jp` refuses, reports the path, and exits with code `6`. There is no silent
-  merge.
-- **Path-jail.** Every path from a remote listing is resolved inside the clone
-  root. `..` traversal, absolute paths, and symlinks crossing the boundary are
-  rejected — a malicious or buggy server cannot make `jp` write outside your
-  folder.
-- **Your token stays local.** Kept in a token file (mode `0600`) outside the
-  tracked tree; only its *path* is recorded in config. Sent over HTTPS in the
-  `Authorization` header only — never in a URL, never logged, never printed,
-  never committed.
-- **Dotfiles are skipped by default.** `.env`, `.ssh`, and friends are left out
-  of sync (reported as `S`) unless you explicitly change the `dotfiles` policy.
+- **`push`/`pull` never delete** unless you opt into mirror mode — and even then
+  jp asks you, file by file, defaulting to keep.
+- **Conflicts are never silently overwritten.** If both sides changed since the
+  last sync, jp aborts that file and tells you.
+- **Path-jailing.** Every remote operation is confined to your workspace's
+  prefix. The server root and shared spaces (`compartilhado`, `lapix`,
+  `shared`, …) are refused outright.
+- **Untrusted server on download.** File names from the server are sanitized
+  before anything is written locally (anti path-traversal / Zip-Slip), and
+  writes are atomic and never follow a symlink.
+- **Your token never leaks** — stored by path only, sent in the `Authorization`
+  header (never a URL), redacted from all output, never committed.
 
-See [`SECURITY.md`](SECURITY.md) and [`docs/security.md`](docs/security.md) for
-the full threat model and how to report a vulnerability.
+Found a vulnerability? See [SECURITY.md](SECURITY.md) — please don't open a
+public issue.
 
 ---
 
 ## FAQ
 
-**Why doesn't `.gitignore` (or my other dotfiles) get pushed?**
-By default `jp`'s dotfile policy is `skip`, so hidden files are left out of the
-push plan and reported as `S` (skipped) — you don't accidentally leak secrets
-like `.env` or `.ssh` from a shared machine. (Many Jupyter servers also reject
-hidden-file writes outright with `allow_hidden=False`, returning HTTP 400.) If
-you really need hidden files synced, opt in:
+**Is `jp` related to git?** No — it borrows git's *workflow*, not its internals.
+There's no remote version history on a JupyterHub.
 
-```bash
-jp config set dotfiles mangle   # uploads e.g. .gitignore as dot__gitignore
-```
+**Does it need Jupyter installed locally?** No. Just Python 3.9+; it talks to the
+Hub over HTTPS.
 
-See [`docs/commands.md`](docs/commands.md) for the dotfile policy trade-offs.
+**Why won't my `.gitignore` (or any dotfile) upload?** Most JupyterHub servers
+run with `allow_hidden=False`, which rejects creating hidden files (names
+starting with `.`). `jp` detects this and *skips* dotfiles on push, reporting
+them instead of failing — your `.git/`, `.gitignore`, `.env` etc. simply stay
+local (which is usually what you want). A nice side effect: secrets in dotfiles
+never get pushed by accident.
 
-**Is this a replacement for `git`?**
-No. `jp` has no branching or merging model — it just syncs one local folder
-with one remote prefix. Put `git` *on top* of the local copy if you want
-version control.
-
-**Can `jp` delete my remote files if I `rm` them locally?**
-No. Local deletions are not propagated. Remote deletion is a separate, gated,
-confirmed action.
-
-**Does it need `requests` or any other package?**
-No. `jp` uses only the Python standard library (`urllib`), so it runs anywhere
-Python ≥ 3.8 does — and the zipapp/binary builds need nothing at all.
-
-**What about conflicts?**
-If both sides changed, `jp status` flags the file and `push`/`pull` refuse
-until you resolve it manually. Your data is never silently clobbered.
-
----
+**Will it overwrite my work?** Never silently. A conflict aborts that file;
+remote deletes are opt-in (mirror mode) and confirmed file-by-file.
 
 ## Troubleshooting
 
-**"Connection refused" / network errors (exit 4).**
-The Hub may be asleep or down. Open it in a browser to confirm it's running,
-check the URL in `.jp/config.json`, then retry. `jp` retries with backoff
-before giving up.
+- **`jp: command not found`** — run `pipx ensurepath` / `uv tool update-shell`, reopen the terminal.
+- **`your JupyterHub server appears to be stopped`** — open the Hub UI and click *Start My Server*.
+- **`authentication failed` / HTTP 403** — your token expired; create a new one and `jp login` again (or update the token file).
+- **A big upload times out** — raise the timeout: `jp config set timeout 120`.
 
-**"Auth error" / 403 (exit 4).**
-Your token is missing, wrong, or expired. Generate a fresh one from the Hub's
-Token page and run `jp login` (or pass `--token-file` / set `JP_TOKEN_FILE`).
-
-**`jp: command not found` after install.**
-The install location isn't on your `PATH`. For `~/.local/bin` (macOS/Linux),
-add it to your shell profile:
-
-```bash
-export PATH="$HOME/.local/bin:$PATH"
-```
-
-On Windows the install script adds `%LOCALAPPDATA%\jp\bin` to your user PATH —
-open a **new** terminal so the change takes effect.
+Run `jp doctor` for a guided check.
 
 ---
 
 ## Contributing
 
-Contributions are welcome! See [`CONTRIBUTING.md`](CONTRIBUTING.md) for setup,
-testing, and PR guidelines, and please follow our
-[`CODE_OF_CONDUCT.md`](CODE_OF_CONDUCT.md).
-
-Architecture overview: [`docs/architecture.md`](docs/architecture.md).
-
----
+Contributions welcome — see [CONTRIBUTING.md](CONTRIBUTING.md) and the
+[Code of Conduct](CODE_OF_CONDUCT.md). The project is standard-library only;
+please keep it dependency-free.
 
 ## License
 
-[MIT](LICENSE) © 2026 Pedro Gimenez.
+[MIT](LICENSE) © Pedro Gimenez

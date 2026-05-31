@@ -71,6 +71,13 @@ class Outcome:
     conflicts: list[str] = field(default_factory=list)
     up_to_date: list[str] = field(default_factory=list)
     failures: list[tuple[str, str]] = field(default_factory=list)  # (rel, reason)
+    # Mirror-mode deletion CANDIDATES (never deleted by the engine; the command
+    # layer confirms each one interactively before acting). For push: files that
+    # exist remotely but not locally. For pull: files that exist locally but not
+    # remotely.
+    deletable: list[str] = field(default_factory=list)
+    # Files actually deleted (filled in by the command layer after confirmation).
+    deleted: list[str] = field(default_factory=list)
 
     @property
     def had_failures(self) -> bool:
@@ -455,6 +462,13 @@ def push(
         except OSError as exc:
             outcome.failures.append((rel, str(exc)))
 
+    # Mirror-mode candidates: remote files with no local counterpart. The engine
+    # NEVER deletes -- the command layer confirms each one (see commands/push.py).
+    outcome.deletable = [
+        st.rel
+        for st in states
+        if st.remote_exists and not st.local_exists and not paths.is_hidden(st.rel)
+    ]
     return outcome
 
 
@@ -548,6 +562,9 @@ def pull(
         except OSError as exc:
             outcome.failures.append((rel, str(exc)))
 
+    # Mirror-mode candidates: local files with no remote counterpart. The engine
+    # NEVER deletes -- the command layer confirms each one (see commands/pull.py).
+    outcome.deletable = [st.rel for st in states if st.local_exists and not st.remote_exists]
     return outcome
 
 
