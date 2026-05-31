@@ -5,6 +5,29 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.0](https://github.com/pehqge/jp-cli/compare/v0.2.0...v0.3.0) (2026-05-31)
+
+
+### Features
+
+* **kernel:** add --link, fix docs, print privacy verdict ([13d42ca](https://github.com/pehqge/jp-cli/commit/13d42cab82df2463d444c5387da59609e8a84e12))
+* **kernel:** add `jp kernel` to fix VS Code remote-kernel cwd ([7ba887c](https://github.com/pehqge/jp-cli/commit/7ba887c782d7cdf341e262fbd398609d8e7d0864))
+
+
+### Bug Fixes
+
+* **credentials:** skip world-readable warning on Windows ([44fa06a](https://github.com/pehqge/jp-cli/commit/44fa06a4af1b9f3983bfaad12e1a9380257f36c9))
+* **readme:** use a static release badge auto-bumped by release-please ([1176d07](https://github.com/pehqge/jp-cli/commit/1176d07d4885562db9dd2f4fb9ccfab9128a97ee))
+* **tests:** isolate Windows home dir and simplify release badge ([9eeb6ac](https://github.com/pehqge/jp-cli/commit/9eeb6acbd7931ee30384b6c74dd9c3214805e425))
+* **tests:** keep USERPROFILE comment within ruff line-length ([86f3d68](https://github.com/pehqge/jp-cli/commit/86f3d68fea3614e930a1d06278ba11017f8d02bb))
+
+
+### Documentation
+
+* fix jp login flow to match actual behavior ([c378c4e](https://github.com/pehqge/jp-cli/commit/c378c4e7538632155a17fd1d70a28901fe7fac40))
+* fix two more stale README details ([1fefd67](https://github.com/pehqge/jp-cli/commit/1fefd6719a35457f374ffc33d7ec3ad244910781))
+* **readme:** add FAQ entry for the VS Code remote-kernel workflow ([d4e0436](https://github.com/pehqge/jp-cli/commit/d4e043644df21357d39156964954a164c68d3cfa))
+
 ## [0.2.0](https://github.com/pehqge/jp-cli/compare/v0.1.0...v0.2.0) (2026-05-31)
 
 
