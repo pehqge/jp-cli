@@ -5,6 +5,14 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.1](https://github.com/pehqge/jp-cli/compare/v0.3.0...v0.3.1) (2026-05-31)
+
+
+### Bug Fixes
+
+* **readme:** use shields static/v1 badge so release-please can't eat the color ([7c9377b](https://github.com/pehqge/jp-cli/commit/7c9377b860b5f75942a93c662b7bdab5b7afa83f))
+* **update:** detect editable installs instead of faking a successful upgrade ([d12722b](https://github.com/pehqge/jp-cli/commit/d12722b47d9ba6192198c1062e01502f4d87be22))
+
 ## [0.3.0](https://github.com/pehqge/jp-cli/compare/v0.2.0...v0.3.0) (2026-05-31)
 
 
