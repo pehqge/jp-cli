@@ -367,6 +367,21 @@ Contributions welcome — see [CONTRIBUTING.md](CONTRIBUTING.md) and the
 [Code of Conduct](CODE_OF_CONDUCT.md). The project is standard-library only;
 please keep it dependency-free.
 
+## Support
+
+`jpsync` is free and open source. If it saves you time on your JupyterHub
+workflow, you can support its development — thank you! ☕
+
+<p align="center">
+  <a href="https://github.com/sponsors/pehqge">
+    <img src="https://img.shields.io/badge/Sponsor-EA4AAA?style=for-the-badge&logo=githubsponsors&logoColor=white" alt="Sponsor on GitHub">
+  </a>
+  &nbsp;&nbsp;
+  <a href="https://www.buymeacoffee.com/pehqge">
+    <img src="https://img.shields.io/badge/Buy%20me%20a%20coffee-FFDD00?style=for-the-badge&logo=buymeacoffee&logoColor=black" alt="Buy me a coffee">
+  </a>
+</p>
+
 ## License
 
 [MIT](LICENSE) © Pedro Gimenez
