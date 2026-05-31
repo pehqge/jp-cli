@@ -111,21 +111,20 @@ jp --version
 
 ### 2. Log in with `jp login`
 
-Run `jp login` and follow the prompts. It walks you through getting the token,
-you paste it (your input stays **hidden**), give the server a short name, and
-choose whether to save it **globally** (usable from anywhere) or **only in this
-workspace**:
+Run `jp login` and follow the prompts. It asks for a short name, walks you
+through getting the token, then you paste it (your input stays **hidden**).
+Credentials are saved **globally** by default (usable from anywhere); pass
+`--local` to keep it only in the current workspace:
 
 ```console
 $ jp login
+Name this server/credential (e.g. myserver): myserver
 To get a JupyterHub API token:
   1. Open your JupyterHub in a browser and log in.
   2. Go to the Token page (the 'Token' link, or <your-hub>/hub/token).
   3. Click 'Request new API token' and copy it (it is shown only once).
 
 Paste your API token (input hidden):
-Name this server/credential (e.g. myserver): myserver
-Save in THIS workspace only (local) or globally? [g/l] (default g): g
 ✓ saved global credential 'myserver'
 ```
 
@@ -248,14 +247,12 @@ deletions are refused unless you pass `--yes`. Conflicts (both sides changed) ar
 interactive and **everything happens locally** — the token never leaves your
 machine and is never printed:
 
+- You give the credential a **name** (usually the server, e.g. `myserver`).
 - It shows you how to get a token, then prompts you to paste it with the input
   **hidden** (no echo).
-- You give the credential a **name** (usually the server, e.g. `myserver`).
-- You choose the **scope**:
-  - **global** — stored in `~/.config/jp/`, usable from any directory.
-  - **local** — stored in this workspace's `.jp/`, usable *only* here. Run `jp`
-    in another folder and it won't see this credential (it'll ask you to
-    `jp login` there).
+- The **scope** defaults to **global** (stored in `~/.config/jp/`, usable from
+  any directory). Pass `--local` to store the credential only in the current
+  workspace's `.jp/`.
 - The token value goes into a private `600` file; only its *name* is recorded in
   the workspace config (`credential` key).
 - A **local** credential lives in the workspace's `.jp/`, and `jp` drops a
@@ -265,8 +262,8 @@ machine and is never printed:
 Save as many as you like — run `jp login` once per server:
 
 ```bash
-jp login                       # interactive: paste, name, choose scope
-jp login --name myserver --global  # scriptable form
+jp login                                      # interactive: name, paste token; saves globally
+jp login --name myserver --global             # scriptable form
 jp login --token-stdin --name lab-gpu --local < token.txt
 ```
 
