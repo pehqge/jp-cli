@@ -186,6 +186,7 @@ automatically (it walks up looking for `.jp/`, stopping at your home folder).
 | `jp ignore [pattern]` | Manage `.jpignore` patterns. |
 | `jp rm <path>` | Delete on the remote — gated, dry-run + typed confirmation. The only deleter. |
 | `jp kernel` | Set up a VS Code remote kernel to run notebooks in the right directory ([guide](docs/vscode-remote-cwd.md)). |
+| `jp terminal` | Open the remote machine's shell in your terminal, in the workspace folder. Creates/deletes only an ephemeral terminal session; touches no files. |
 | `jp doctor` | Diagnose token, connectivity, server status. |
 | `jp update` | Update jp to the latest version. |
 | `jp version` | Print the version (also `jp --version`). |
