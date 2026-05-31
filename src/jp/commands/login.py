@@ -26,7 +26,7 @@ from ..paths import find_root
 
 def add_parser(subparsers: argparse._SubParsersAction) -> None:
     p = subparsers.add_parser("login", help="save a named API-token credential")
-    p.add_argument("--name", default="", help="name for this credential/server (e.g. ufsc)")
+    p.add_argument("--name", default="", help="name for this credential/server (e.g. myserver)")
     scope = p.add_mutually_exclusive_group()
     scope.add_argument(
         "--global",
@@ -88,7 +88,7 @@ def _ask_name(args: argparse.Namespace) -> str:
     if not name:
         if not sys.stdin.isatty():
             raise UsageError("a credential name is required (pass --name NAME)")
-        name = input("Name this server/credential (e.g. ufsc): ").strip()
+        name = input("Name this server/credential (e.g. myserver): ").strip()
     return credentials.validate_name(name)
 
 

@@ -39,9 +39,9 @@ def home(tmp_path, monkeypatch):
 def test_login_global_via_stdin(home, monkeypatch, capsys, tmp_path):
     monkeypatch.chdir(tmp_path)  # not inside a workspace
     monkeypatch.setattr("sys.stdin", io.StringIO("MYTOKENVALUE1234567890\n"))
-    rc = login.run(_args(name="ufsc", scope_global=True, token_stdin=True))
+    rc = login.run(_args(name="myserver", scope_global=True, token_stdin=True))
     assert rc == 0
-    cred = credentials.resolve("ufsc")
+    cred = credentials.resolve("myserver")
     assert cred is not None and cred.scope == "global"
     assert credentials.read_token(cred) == "MYTOKENVALUE1234567890"
     out = capsys.readouterr()
@@ -80,17 +80,17 @@ def test_login_token_path_registers_existing_file(home, monkeypatch, tmp_path):
     monkeypatch.chdir(tmp_path)
     src = tmp_path / "tok"
     src.write_text("FILELOADEDTOKEN1234567890\n")
-    rc = login.run(_args(name="ufsc", scope_global=True, token_path=str(src)))
+    rc = login.run(_args(name="myserver", scope_global=True, token_path=str(src)))
     assert rc == 0
     reg = json.loads((home / ".config" / "jp" / "credentials.json").read_text())
-    assert reg["credentials"]["ufsc"]["token_path"] == str(src)
+    assert reg["credentials"]["myserver"]["token_path"] == str(src)
 
 
 def test_login_local_outside_workspace_errors(home, monkeypatch, tmp_path):
     monkeypatch.chdir(tmp_path)
     monkeypatch.setattr("sys.stdin", io.StringIO("TOKENVALUE1234567890\n"))
     with pytest.raises(UsageError):
-        login.run(_args(name="ufsc", scope_local=True, token_stdin=True))
+        login.run(_args(name="myserver", scope_local=True, token_stdin=True))
 
 
 def test_login_noninteractive_requires_name(home, monkeypatch, tmp_path):

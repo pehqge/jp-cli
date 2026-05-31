@@ -39,7 +39,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Conflict-safe synchronization: conflicting files are never overwritten
   silently (exit code `6`).
 - Token-based authentication resolved as `--token-file` > `$JP_TOKEN_FILE` /
-  `$JUPYTER_TOKEN` > repo config > global config > `~/.jupyter_ufsc_token`;
+  `$JUPYTER_TOKEN` > repo config > global config > `~/.jupyter_token`;
   only the token path is stored in config, and the token file is expected to be
   mode `0600`.
 - Path-jail confinement: remote paths are resolved inside the clone root, with

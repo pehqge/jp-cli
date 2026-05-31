@@ -1,3 +1,6 @@
+# Local agent / editor state
+.claude/
+
 # Byte-compiled / optimized / caches
 __pycache__/
 *.py[cod]
@@ -40,7 +43,7 @@ htmlcov/
 # Secrets / credentials -- NEVER commit a token
 *.token
 *token*
-.jupyter_ufsc_token
+.jupyter_token
 .env
 .env.*
 

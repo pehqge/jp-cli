@@ -39,9 +39,9 @@ def test_ensure_dot_gitignore_is_idempotent_and_preserves_content(tmp_path):
 def test_local_credential_dir_is_gitignored(home, tmp_path):
     root = tmp_path / "repo"
     root.mkdir()
-    cred = credentials.add("ufsc", "LOCALTOKENVALUE1234567890", scope="local", root=root)
+    cred = credentials.add("myserver", "LOCALTOKENVALUE1234567890", scope="local", root=root)
     # token file exists locally...
-    assert (root / ".jp" / "credentials.d" / "ufsc.token").is_file()
+    assert (root / ".jp" / "credentials.d" / "myserver.token").is_file()
     assert cred.scope == "local"
     # ...and .jp/ is git-ignored, so the token can't be committed.
     gi = root / ".jp" / ".gitignore"

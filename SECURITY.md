@@ -47,13 +47,13 @@ Please upgrade to the newest release before reporting.
   buggy server cannot make `jp` read or write outside your folder.
 - **Token stays local and private.** The token is resolved in the order
   `--token-file` > `$JP_TOKEN_FILE` / `$JUPYTER_TOKEN` > repo config > global
-  config > `~/.jupyter_ufsc_token`. Only the *path* to the token is stored in
+  config > `~/.jupyter_token`. Only the *path* to the token is stored in
   config; the token file itself should be mode `0600` (`jp` warns when it is
   group/other-readable and refuses a group/world-writable one). The token is
   sent only in the HTTPS `Authorization` header — never in a URL — and is never
   logged, never printed, and never committed.
 - **Dotfiles skipped by default.** With the default `dotfiles = skip` policy,
-  hidden files (`.env`, `.ssh`, `*.token`, `.jupyter_ufsc_token`, …) are left
+  hidden files (`.env`, `.ssh`, `*.token`, `.jupyter_token`, …) are left
   out of the sync plan, so secrets on a shared machine are not pushed by
   accident. (Most Jupyter servers also reject hidden-file writes with
   `allow_hidden=False`.)

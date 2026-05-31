@@ -124,9 +124,9 @@ To get a JupyterHub API token:
   3. Click 'Request new API token' and copy it (it is shown only once).
 
 Paste your API token (input hidden):
-Name this server/credential (e.g. ufsc): ufsc
+Name this server/credential (e.g. myserver): myserver
 Save in THIS workspace only (local) or globally? [g/l] (default g): g
-✓ saved global credential 'ufsc'
+✓ saved global credential 'myserver'
 ```
 
 **Everything stays on your machine.** `jp` writes the token to a private file
@@ -250,7 +250,7 @@ machine and is never printed:
 
 - It shows you how to get a token, then prompts you to paste it with the input
   **hidden** (no echo).
-- You give the credential a **name** (usually the server, e.g. `ufsc`).
+- You give the credential a **name** (usually the server, e.g. `myserver`).
 - You choose the **scope**:
   - **global** — stored in `~/.config/jp/`, usable from any directory.
   - **local** — stored in this workspace's `.jp/`, usable *only* here. Run `jp`
@@ -266,7 +266,7 @@ Save as many as you like — run `jp login` once per server:
 
 ```bash
 jp login                       # interactive: paste, name, choose scope
-jp login --name ufsc --global  # scriptable form
+jp login --name myserver --global  # scriptable form
 jp login --token-stdin --name lab-gpu --local < token.txt
 ```
 

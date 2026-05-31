@@ -24,7 +24,7 @@ def _mode(path: Path) -> int:
 
 
 def test_validate_name_accepts_safe_names():
-    assert credentials.validate_name("ufsc") == "ufsc"
+    assert credentials.validate_name("myserver") == "myserver"
     assert credentials.validate_name("  lab-gpu_1.2  ") == "lab-gpu_1.2"
 
 
@@ -35,17 +35,17 @@ def test_validate_name_rejects_bad(bad):
 
 
 def test_add_global_writes_private_file_and_registry(home):
-    cred = credentials.add("ufsc", "SECRET-TOKEN-abcdef1234", scope="global")
+    cred = credentials.add("myserver", "SECRET-TOKEN-abcdef1234", scope="global")
     tok = Path(cred.token_path)
     assert tok.is_file()
     assert _mode(tok) == 0o600
     assert tok.read_text().strip() == "SECRET-TOKEN-abcdef1234"
     reg = json.loads((home / ".config" / "jp" / "credentials.json").read_text())
-    assert reg["credentials"]["ufsc"]["token_path"] == str(tok)
+    assert reg["credentials"]["myserver"]["token_path"] == str(tok)
 
 
 def test_read_token_registers_redaction(home):
-    cred = credentials.add("ufsc", "TOPSECRETVALUE1234567890", scope="global")
+    cred = credentials.add("myserver", "TOPSECRETVALUE1234567890", scope="global")
     assert credentials.read_token(cred) == "TOPSECRETVALUE1234567890"
     assert "TOPSECRETVALUE1234567890" not in ui.redact("token TOPSECRETVALUE1234567890")
 
@@ -68,17 +68,17 @@ def test_local_shadows_global(home, tmp_path):
 
 
 def test_duplicate_without_force_raises(home):
-    credentials.add("ufsc", "FIRSTTOKEN1234567890", scope="global")
+    credentials.add("myserver", "FIRSTTOKEN1234567890", scope="global")
     with pytest.raises(UsageError):
-        credentials.add("ufsc", "SECONDTOKEN1234567890", scope="global")
-    cred = credentials.add("ufsc", "SECONDTOKEN1234567890", scope="global", overwrite=True)
+        credentials.add("myserver", "SECONDTOKEN1234567890", scope="global")
+    cred = credentials.add("myserver", "SECONDTOKEN1234567890", scope="global", overwrite=True)
     assert credentials.read_token(cred) == "SECONDTOKEN1234567890"
 
 
 def test_add_path_registers_existing_file_without_copy(home, tmp_path):
     src = tmp_path / "mytoken"
     src.write_text("EXISTINGTOKEN1234567890\n")
-    cred = credentials.add_path("ufsc", str(src), scope="global")
+    cred = credentials.add_path("myserver", str(src), scope="global")
     assert cred.token_path == str(src)
     assert credentials.read_token(cred) == "EXISTINGTOKEN1234567890"
 
@@ -86,13 +86,13 @@ def test_add_path_registers_existing_file_without_copy(home, tmp_path):
 def test_list_credentials_merges_local_and_global(home, tmp_path):
     root = tmp_path / "repo"
     root.mkdir()
-    credentials.add("ufsc", "TOKAAAAAAAAAAAAAAAAA1", scope="global")
+    credentials.add("myserver", "TOKAAAAAAAAAAAAAAAAA1", scope="global")
     credentials.add("other", "TOKBBBBBBBBBBBBBBBBB2", scope="global")
-    credentials.add("ufsc", "LOCALTOKCCCCCCCCCCC3", scope="local", root=root)
+    credentials.add("myserver", "LOCALTOKCCCCCCCCCCC3", scope="local", root=root)
     names = {(c.name, c.scope) for c in credentials.list_credentials(root=root)}
-    assert names == {("ufsc", "local"), ("other", "global")}
+    assert names == {("myserver", "local"), ("other", "global")}
 
 
 def test_empty_token_refused(home):
     with pytest.raises(AuthError):
-        credentials.add("ufsc", "   ", scope="global")
+        credentials.add("myserver", "   ", scope="global")

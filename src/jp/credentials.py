@@ -1,6 +1,6 @@
 """Named credential storage for jp -- multiple API tokens, global or per-repo.
 
-A *credential* is a named API token (e.g. ``ufsc``, ``lab-gpu``). The token
+A *credential* is a named API token (e.g. ``myserver``, ``lab-gpu``). The token
 VALUE is written to a private 0600 file on the user's machine and is never
 echoed; a small JSON registry maps each name to its token file. Two scopes
 exist:

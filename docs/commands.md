@@ -27,7 +27,7 @@ Turn the current directory into a jp workspace without downloading anything
 ### `jp login`
 Save a **named credential** for a server, interactively. It explains how to get a
 JupyterHub API token, prompts you to paste it (hidden, via `getpass`), asks for a
-name (e.g. `ufsc`), and asks whether to save it **global** (everywhere) or
+name (e.g. `myserver`), and asks whether to save it **global** (everywhere) or
 **local** (this workspace only). The token value is written to a private `0600`
 file and registered for redaction; it is never echoed and never written into
 `.jp/config.json`. Run it repeatedly to store several servers.

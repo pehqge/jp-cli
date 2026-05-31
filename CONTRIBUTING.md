@@ -139,7 +139,7 @@ Examples:
 feat: add named credentials with interactive jp login
 fix: resolve token path for local credentials before global
 docs: document the release-please flow
-feat!: drop support for the legacy ~/.jupyter_ufsc_token path
+feat!: drop support for the legacy ~/.jupyter_token path
 ```
 
 Scope is optional (`feat(login): …`). Keep the subject imperative and concise;

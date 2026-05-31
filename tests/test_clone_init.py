@@ -41,24 +41,24 @@ def test_token_path_bypasses_selection(home):
 
 
 def test_single_credential_auto_selected(home):
-    credentials.add("ufsc", "TOKENAAAAAAAAAAAAAA12", scope="global")
-    assert _context.choose_credential(_args(), root=None) == "ufsc"
+    credentials.add("myserver", "TOKENAAAAAAAAAAAAAA12", scope="global")
+    assert _context.choose_credential(_args(), root=None) == "myserver"
 
 
 def test_multiple_credentials_noninteractive_errors(home):
-    credentials.add("ufsc", "TOKENAAAAAAAAAAAAAA12", scope="global")
+    credentials.add("myserver", "TOKENAAAAAAAAAAAAAA12", scope="global")
     credentials.add("lab", "TOKENBBBBBBBBBBBBBB34", scope="global")
     with pytest.raises(UsageError):
         _context.choose_credential(_args(), root=None)
 
 
 def test_multiple_credentials_explicit_choice(home):
-    credentials.add("ufsc", "TOKENAAAAAAAAAAAAAA12", scope="global")
+    credentials.add("myserver", "TOKENAAAAAAAAAAAAAA12", scope="global")
     credentials.add("lab", "TOKENBBBBBBBBBBBBBB34", scope="global")
     assert _context.choose_credential(_args(credential="lab"), root=None) == "lab"
 
 
 def test_unknown_credential_errors(home):
-    credentials.add("ufsc", "TOKENAAAAAAAAAAAAAA12", scope="global")
+    credentials.add("myserver", "TOKENAAAAAAAAAAAAAA12", scope="global")
     with pytest.raises(UsageError):
         _context.choose_credential(_args(credential="nope"), root=None)
