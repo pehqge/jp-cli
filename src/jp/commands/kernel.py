@@ -21,8 +21,9 @@ import shutil
 import subprocess
 import sys
 
+from .. import config as config_mod
 from .. import ui
-from ..errors import EXIT_OK
+from ..errors import EXIT_OK, SafetyError
 from ._context import load_repo
 
 # Full walkthrough (connecting VS Code + how it works), linked from the command
@@ -92,6 +93,17 @@ def add_parser(subparsers: argparse._SubParsersAction) -> None:
         help="print the full setup snippet (otherwise it is only copied to the clipboard)",
     )
     p.add_argument(
+        "--link",
+        action="store_true",
+        help="show + copy the server connection URL (with your token) for VS Code",
+    )
+    p.add_argument(
+        "-y",
+        "--yes",
+        action="store_true",
+        help="skip the confirmation prompt for --link",
+    )
+    p.add_argument(
         "--no-clipboard",
         action="store_true",
         help="do not copy to the clipboard",
@@ -103,6 +115,16 @@ def build_snippet(local_root: str, prefix: str) -> str:
     """Build the cell snippet for a workspace (pure; used by tests)."""
     startup = _STARTUP_FILE.format(local_root=local_root, prefix=prefix)
     return _INSTALLER.format(script=startup)
+
+
+def connection_url(base_url: str, token: str) -> str:
+    """Build the Jupyter-server connection URL VS Code expects (pure; tested).
+
+    Strips a trailing ``/api`` so the result is the server root, then appends the
+    token as a query parameter.
+    """
+    server = base_url[:-4] if base_url.endswith("/api") else base_url
+    return server.rstrip("/") + "/?token=" + token
 
 
 def _copy_to_clipboard(text: str) -> str | None:
@@ -136,6 +158,11 @@ def run(args: argparse.Namespace) -> int:
     # load_repo() raises ConfigError (EXIT_CONFIG) outside a jp workspace, telling
     # the user to run inside an initialized folder -- exactly what we want here.
     ctx = load_repo()
+
+    # `--link`: show + copy the server URL (with token) to paste into VS Code.
+    if args.link:
+        return _run_link(args, ctx)
+
     snippet = build_snippet(str(ctx.root), ctx.cfg.prefix)
 
     # `--script`: print the raw snippet only, so it can be inspected or piped.
@@ -176,4 +203,36 @@ def run(args: argparse.Namespace) -> int:
     ui.detail("Full script: jp kernel --script")
     ui.detail("Connecting VS Code to the remote kernel + how it works (full guide):")
     ui.detail(f"  {_GUIDE_URL}")
+    return EXIT_OK
+
+
+def _run_link(args: argparse.Namespace, ctx) -> int:  # noqa: ANN001 - RepoContext
+    """Show + copy the server connection URL (with token) for VS Code.
+
+    This is the ONE place jp prints the token, and it is strictly opt-in (the
+    user must pass --link and confirm). It exists because pasting the URL into
+    VS Code's kernel picker is otherwise a manual token hunt. SECURITY.md
+    documents this exception. The URL is written with the builtin ``print`` so it
+    deliberately bypasses ``ui.redact`` -- otherwise the token would be masked,
+    defeating the purpose.
+    """
+    token = config_mod.load_token(ctx.cfg)
+    link = connection_url(ctx.cfg.base_url, token)
+
+    if not args.yes:
+        ui.warn("This prints your API token to the screen -- anyone watching it can read it.")
+        if not sys.stdin.isatty():
+            raise SafetyError("refusing to print the token without confirmation; pass --yes")
+        ans = input("Show the connection URL with your token? [y/N]: ").strip().lower()
+        if ans not in ("y", "yes"):
+            ui.info("aborted")
+            return EXIT_OK
+
+    tool = _copy_to_clipboard(link) if not args.no_clipboard else None
+
+    print(link)  # intentional raw, unredacted output (see docstring)
+
+    if tool is not None:
+        ui.success(f"Also copied to clipboard (via {tool}).")
+    ui.detail("Paste it where VS Code asks for the server URL (kernel picker).")
     return EXIT_OK

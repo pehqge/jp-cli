@@ -89,9 +89,16 @@ snippet — pre-filled with this workspace's local root and `prefix` — and cop
 it to your clipboard. You paste it into one cell, run it once, and restart the
 kernel; every notebook in the workspace then starts in the correct directory
 automatically. By default the snippet is only copied (kept out of the output);
-`--script` prints it, and `--no-clipboard` skips copying. Must be run inside a
-workspace. See [vscode-remote-cwd.md](vscode-remote-cwd.md) for the full
-walkthrough, including how to connect VS Code to the remote kernel.
+`--script` prints it, and `--no-clipboard` skips copying.
+
+`--link` instead shows and copies the **server connection URL** (with your
+token) to paste into VS Code's kernel picker. This is the one command that
+prints your token, so it is opt-in and asks for confirmation first (`-y/--yes`
+skips the prompt); treat the URL like a password.
+
+Must be run inside a workspace. See
+[vscode-remote-cwd.md](vscode-remote-cwd.md) for the full walkthrough, including
+how to connect VS Code to the remote kernel.
 
 ## Inspection & configuration
 

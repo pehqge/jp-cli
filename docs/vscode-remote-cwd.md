@@ -21,28 +21,33 @@ extensions, and a **running** Hub server (open the Hub in your browser and click
 
 You connect VS Code to the *same* server jp talks to, using the *same* API token:
 
-1. Open your `.ipynb` in VS Code.
-2. Click the kernel picker (top-right of the notebook) →
-   **Select Another Kernel…** → **Existing Jupyter Server…**
-   (equivalently: Command Palette → *Jupyter: Specify Jupyter Server for
-   Connections*).
-3. Choose **Enter the URL of a running Jupyter Server** and paste your server
-   URL with the token appended:
+First, get your connection URL (server URL + token). jp builds it for you:
 
-   ```
-   https://<host>/user/<name>/?token=<YOUR_TOKEN>
-   ```
+```console
+$ jp kernel --link
+```
 
-   - `https://<host>/user/<name>` is the `base_url` from your `.jp/config.json`
-     (without the trailing `/api`).
-   - `<YOUR_TOKEN>` is the JupyterHub API token you saved with `jp login`. You
-     can mint a fresh one at `https://<host>/hub/token`.
-4. Give the server a display name if asked, then pick the **Python** kernel it
-   offers.
+It prints the URL and copies it to your clipboard (after a confirmation, since
+the URL contains your token). The URL looks like
+`https://<host>/user/<name>/?token=<TOKEN>`. You can also assemble it by hand:
+the host/user part is the `base_url` from your `.jp/config.json`, and the token
+is the one you saved with `jp login` (mint a fresh one at `https://<host>/hub/token`).
+
+Then, in VS Code:
+
+1. Open your `.ipynb`.
+2. Click the kernel picker (top-right) → **Select Another Kernel…**.
+3. The first time, VS Code prompts you to **install the Jupyter (Hub)
+   extension** — confirm and let it install. Then open the kernel picker again.
+4. Choose **Existing JupyterHub Server…** and paste your URL (the one from
+   `jp kernel --link`). Give the server a display name if asked.
+5. **Select a kernel** from the server: pick the plain **`Python 3 (ipykernel)`**
+   listed as a **Jupyter Kernel** — *not* the **Jupyter Session** entry (the one
+   tagged with a notebook name like `(test.ipynb)` and "Last activity … ago"),
+   which just reattaches a kernel that already ran.
 
 > **Security:** that URL embeds your token — treat it like a password. Don't
-> paste it into chats, commit it, or share your screen with it visible. jp never
-> prints your token for this reason; you copy it into VS Code yourself.
+> paste it into chats, commit it, or share your screen with it visible.
 
 You should now be able to run cells on the remote. If a cell that reads a file
 fails with `FileNotFoundError`, continue to the next section.
@@ -76,8 +81,8 @@ From inside your workspace, run:
 $ jp kernel
 ```
 
-It prints a small snippet (pre-filled with your workspace root and prefix) and
-copies it to your clipboard. Then:
+It copies a small snippet (pre-filled with your workspace root and prefix) to
+your clipboard — run `jp kernel --script` if you want to see it printed. Then:
 
 1. In VS Code, open a notebook connected to your remote kernel.
 2. Add a new cell, paste, and run it once. It writes an IPython *startup script*
@@ -167,19 +172,35 @@ is private to you. Verify it before installing on a shared cluster — run this 
 a cell:
 
 ```python
-import subprocess
-print(subprocess.run("ls -la /.dockerenv 2>/dev/null; "
-                     "findmnt -T ~/.ipython -o SOURCE,FSTYPE 2>/dev/null || df -hT ~",
-                     shell=True, capture_output=True, text=True).stdout)
+import os, subprocess
+from shlex import quote
+
+home = quote(os.path.expanduser("~"))
+def sh(c):
+    return subprocess.run(c, shell=True, capture_output=True, text=True).stdout.strip()
+
+fstype = (sh(f"findmnt -T {home} -no FSTYPE") or sh(f"stat -f -c %T {home}")
+          or sh(f"df -PT {home} | awk 'NR==2{{print $2}}'"))
+container = os.path.exists("/.dockerenv")
+LOCAL = {"overlay", "ext4", "ext3", "xfs", "btrfs", "zfs", "tmpfs"}
+NETWORK = {"nfs", "nfs4", "cifs", "smb2", "fuse.sshfs", "lustre", "gpfs"}
+
+print(f"container:           {container}")
+print(f"~ filesystem:        {fstype or 'unknown'}")
+if fstype in LOCAL:
+    print("VERDICT: PRIVATE  -- local filesystem, safe to install in ~.")
+elif fstype in NETWORK:
+    print("VERDICT: SHARED   -- network filesystem; do NOT install in ~ (use a per-user location).")
+else:
+    print(f"VERDICT: UNKNOWN  -- check '{fstype}' before installing.")
 ```
 
-- A container marker (`/.dockerenv`) and a **local** filesystem for `~/.ipython`
-  (`overlay`, `ext4`, `xfs`, `btrfs`) mean it is **private to your container** —
-  safe to install.
-- If `~/.ipython` is on a **network** filesystem (`nfs`, `cifs`) it may be shared
-  with other researchers — don't install there. The generated script already
-  no-ops for any notebook outside *your* workspace and never raises, but on truly
-  shared homes prefer a per-user location (see below).
+- **PRIVATE** (a `/.dockerenv` marker and a **local** filesystem like `overlay`,
+  `ext4`, `xfs`, `btrfs`) means `~` belongs to your container alone — safe.
+- **SHARED** (a **network** filesystem like `nfs`, `cifs`) means `~` may be shared
+  with other researchers — don't install there; prefer a per-user location (see
+  below). The generated script already no-ops for any notebook outside *your*
+  workspace and never raises, but on truly shared homes avoid touching `~`.
 
 ---
 

@@ -7,7 +7,7 @@ from pathlib import Path
 
 from jp import cli
 from jp.commands import kernel
-from jp.errors import EXIT_CONFIG, EXIT_OK
+from jp.errors import EXIT_CONFIG, EXIT_OK, EXIT_SAFETY
 
 
 def test_kernel_outside_repo_returns_config_exit(tmp_path, monkeypatch):
@@ -54,6 +54,31 @@ def _extract_inner(snippet: str) -> str:
     body = snippet.split("SCRIPT = ", 1)[1]
     literal = body.split("\n\nd = Path.home", 1)[0]
     return ast.literal_eval(literal)
+
+
+def test_connection_url_strips_api_and_appends_token():
+    assert kernel.connection_url("https://h/api", "TOK") == "https://h/?token=TOK"
+    assert kernel.connection_url("https://h/user/me", "TOK") == "https://h/user/me/?token=TOK"
+
+
+def test_link_without_tty_and_without_yes_refuses(repo, monkeypatch, capsys):
+    monkeypatch.chdir(repo)
+    monkeypatch.setenv("JP_TOKEN", "DUMMYTOKENVALUE1234567890")
+    # pytest's stdin is not a tty -> must refuse without --yes and never print the token.
+    rc = cli.main(["kernel", "--link", "--no-clipboard"])
+    assert rc == EXIT_SAFETY
+    captured = capsys.readouterr()
+    assert "DUMMYTOKENVALUE1234567890" not in captured.out
+
+
+def test_link_yes_prints_url_with_token(repo, monkeypatch, capsys):
+    monkeypatch.chdir(repo)
+    monkeypatch.setenv("JP_TOKEN", "DUMMYTOKENVALUE1234567890")
+    rc = cli.main(["kernel", "--link", "--yes", "--no-clipboard"])
+    assert rc == EXIT_OK
+    out = capsys.readouterr().out
+    # base_url 'https://hub.example/api' -> server root + token, printed raw.
+    assert "https://hub.example/?token=DUMMYTOKENVALUE1234567890" in out
 
 
 class _FakeEvents:

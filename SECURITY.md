@@ -49,9 +49,13 @@ Please upgrade to the newest release before reporting.
   `--token-file` > `$JP_TOKEN_FILE` / `$JUPYTER_TOKEN` > repo config > global
   config > `~/.jupyter_token`. Only the *path* to the token is stored in
   config; the token file itself should be mode `0600` (`jp` warns when it is
-  group/other-readable and refuses a group/world-writable one). The token is
-  sent only in the HTTPS `Authorization` header — never in a URL — and is never
-  logged, never printed, and never committed.
+  group/other-readable and refuses a group/world-writable one). During normal
+  sync the token is sent only in the HTTPS `Authorization` header — never in a
+  URL — and is never logged, never printed, and never committed. The single
+  exception is `jp kernel --link`: it builds a connection URL containing the
+  token and prints it so you can paste it into VS Code's kernel picker. It is
+  strictly opt-in and prompts for confirmation first (skip with `--yes`); treat
+  that URL like a password.
 - **Dotfiles skipped by default.** With the default `dotfiles = skip` policy,
   hidden files (`.env`, `.ssh`, `*.token`, `.jupyter_token`, …) are left
   out of the sync plan, so secrets on a shared machine are not pushed by
