@@ -6,7 +6,7 @@
 
 <p align="center">
   <a href="https://github.com/pehqge/jpsync/actions/workflows/ci.yml"><img src="https://github.com/pehqge/jpsync/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
-  <a href="https://github.com/pehqge/jpsync/releases/latest"><img src="https://img.shields.io/static/v1?label=release&message=v0.3.1&color=blue" alt="Release"></a> <!-- x-release-please-version -->
+  <a href="https://github.com/pehqge/jpsync/releases/latest"><img src="https://img.shields.io/static/v1?label=release&message=v1.0.0&color=blue" alt="Release"></a> <!-- x-release-please-version -->
   <img src="https://img.shields.io/badge/python-3.9%2B-blue" alt="Python 3.9+">
   <a href="https://github.com/pehqge/jpsync/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-MIT-yellow" alt="License: MIT"></a>
   <img src="https://img.shields.io/badge/dependencies-zero-brightgreen" alt="Zero dependencies">
