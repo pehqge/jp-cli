@@ -13,8 +13,8 @@ jobs:
     name: Build wheel, sdist and zipapp
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
       - name: Build wheel and sdist
@@ -23,7 +23,7 @@ jobs:
           python -m build
       - name: Build zipapp
         run: python -m zipapp src -m "jp.cli:main" -p "/usr/bin/env python3" -o dist/jp.pyz
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: python-dist
           path: dist/*
@@ -42,8 +42,8 @@ jobs:
           - { os: windows-latest, name: windows-x86_64 }
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
       - run: python -m pip install pyinstaller
@@ -58,7 +58,7 @@ jobs:
         run: |
           mkdir staged
           copy dist\jp.exe staged\jp-${{ matrix.name }}.exe
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: binary-${{ matrix.name }}
           path: staged/*
@@ -68,7 +68,7 @@ jobs:
     needs: [build-python, build-binaries]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           path: artifacts
       - name: Collect release assets and checksums
@@ -76,7 +76,7 @@ jobs:
           mkdir -p release
           find artifacts -type f \( -name '*.whl' -o -name '*.tar.gz' -o -name 'jp.pyz' -o -name 'jp-*' \) -exec cp {} release/ \;
           cd release && sha256sum * > SHA256SUMS
-      - uses: softprops/action-gh-release@v2
+      - uses: softprops/action-gh-release@v3
         with:
           files: release/*
           generate_release_notes: true
@@ -93,7 +93,7 @@ jobs:
     permissions:
       id-token: write
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: python-dist
           path: dist
