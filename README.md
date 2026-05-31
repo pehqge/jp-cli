@@ -33,7 +33,7 @@ $ # ...edit files locally...
 $ jp push
   push: train.py
   push: data/config.yaml
-✓ push: 2 transferred, 10 up to date, 0 skipped, 0 conflict(s), 0 deleted, 0 failed
+✓ push: 2 transferred, 10 up to date, 0 skipped, 0 conflict(s), 0 failed
 ```
 
 ## Why jp?
@@ -177,7 +177,7 @@ automatically (it walks up looking for `.jp/`, stopping at your home folder).
 |---|---|
 | `jp clone <url> [dir]` | Clone a remote Jupyter folder into a new local directory. Accepts a `lab/tree` URL or `--base-url`/`--prefix`. |
 | `jp init <url>` | Turn the current folder into a jp workspace (no download). |
-| `jp login` | Save a named API-token credential (paste the token, name the server, choose global or per-repo). |
+| `jp login` | Save a named API-token credential (name the server, paste the token; defaults to global; use `--local` for workspace-only). |
 | `jp status` | Show local vs. remote differences. Read-only. |
 | `jp push` | Upload local changes. Additive by default. |
 | `jp pull` | Download remote changes. Additive by default. |
