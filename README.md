@@ -28,18 +28,6 @@ It talks to the JupyterHub REST API directly, has **zero third-party
 dependencies** (pure Python standard library), and runs anywhere Python 3.9+
 runs — macOS, Windows, Linux.
 
-```console
-$ jp clone https://jupyter.example.com/user/you/lab/tree/your-folder
-cloning your-folder -> ./your-folder
-✓ clone: 12 transferred
-
-$ cd your-folder
-$ # ...edit files locally...
-$ jp push
-  push: train.py
-  push: data/config.yaml
-✓ push: 2 transferred, 10 up to date, 0 skipped, 0 conflict(s), 0 failed
-```
 
 <p align="center">
   <img src="assets/demo.gif" alt="jp demo: clone a JupyterHub folder, edit locally, push, then pull a teammate's results" width="760">
