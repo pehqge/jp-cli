@@ -250,6 +250,10 @@ class WebSocket:
         """Send a TEXT message (masked, as required for client frames)."""
         self._sock.sendall(encode_frame(OP_TEXT, text.encode("utf-8"), os.urandom(4)))
 
+    def send_binary(self, data: bytes) -> None:
+        """Send a BINARY message (masked, as required for client frames)."""
+        self._sock.sendall(encode_frame(OP_BINARY, bytes(data), os.urandom(4)))
+
     def _send_control(self, opcode: int, payload: bytes = b"") -> None:
         try:
             self._sock.sendall(encode_frame(opcode, payload, os.urandom(4)))
