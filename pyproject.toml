@@ -91,3 +91,6 @@ no_implicit_optional = true
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-ra"
+markers = [
+    "realjupyter: end-to-end tests against a REAL local jupyter_server (skipped unless the throwaway venv at /tmp/jpreal is present)",
+]

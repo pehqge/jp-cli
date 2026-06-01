@@ -404,6 +404,39 @@ def test_terminal_ws_url_derivation():
 
 
 # --------------------------------------------------------------------------- #
+# Cleartext-token guard + the _allow_http_localhost loopback escape hatch.
+# --------------------------------------------------------------------------- #
+def test_http_token_refused_by_default():
+    # A token over plain http:// is refused regardless of host.
+    with pytest.raises(AuthError):
+        Api("http://example.com:8888", "secret-token")
+    with pytest.raises(AuthError):
+        Api("http://127.0.0.1:8888", "secret-token")  # not opted in
+
+
+@pytest.mark.parametrize("host", ["127.0.0.1", "localhost", "[::1]"])
+def test_http_token_allowed_on_loopback_when_opted_in(host):
+    # Loopback http+token is permitted ONLY with the private opt-in. Loopback
+    # never traverses a network, so a cleartext token there cannot be sniffed.
+    api = Api(f"http://{host}:8888", "secret-token", _allow_http_localhost=True)
+    assert api.base_url == f"http://{host}:8888"
+
+
+@pytest.mark.parametrize("host", ["example.com", "10.0.0.5", "192.168.1.1", "8.8.8.8"])
+def test_http_token_still_refused_for_nonloopback_even_when_opted_in(host):
+    # The opt-in must NOT weaken the guard for a real network address: a token
+    # over http to a non-loopback host is still refused.
+    with pytest.raises(AuthError):
+        Api(f"http://{host}:8888", "secret-token", _allow_http_localhost=True)
+
+
+def test_loopback_opt_in_does_not_affect_https():
+    # https is always fine with a token, opt-in or not.
+    api = Api("https://hub.example/user/alice", "secret-token", _allow_http_localhost=True)
+    assert api.base_url == "https://hub.example/user/alice"
+
+
+# --------------------------------------------------------------------------- #
 # create_checkpoint: cheap server-side undo before a remote overwrite
 # --------------------------------------------------------------------------- #
 def test_create_checkpoint_posts_and_returns_id(monkeypatch):

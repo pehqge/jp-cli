@@ -84,14 +84,23 @@ class ProtocolError(Exception):
 def pack_ws_v1(channel: str, parts: list[bytes]) -> bytes:
     """Serialize a kernel message to the v1 binary WebSocket framing.
 
-    Layout (all integers little-endian, 8 bytes): ``offset_count`` then
-    ``offset_count`` offsets, then the channel name, then each message part
-    (header, parent_header, metadata, content, *buffers). Mirrors Jupyter
-    Server's ``serialize_msg_to_ws_v1``.
+    Layout (all integers little-endian, 8 bytes): an ``offset_count`` uint64,
+    then ``offset_count`` uint64 offsets, then the channel name, then each
+    message part (header, parent_header, metadata, content, *buffers).
+
+    CRITICAL interop detail (verified byte-for-byte against jupyter_server's
+    ``serialize_msg_to_ws_v1``/``deserialize_msg_from_ws_v1`` in
+    tests/test_real_jupyter.py): the offset table carries one offset PER BLOB
+    *plus a trailing sentinel* equal to the total message length. So for a
+    message with ``B`` blobs (channel + parts) the table has ``B + 1`` entries.
+    jupyter's deserializer reconstructs each part as ``data[offsets[i]:
+    offsets[i+1]]`` and therefore REQUIRES that trailing sentinel -- without it
+    the server silently drops the final part (content + buffers), so the kernel
+    never sees the comm payload.
     """
     ch = channel.encode("utf-8")
     blobs = [ch, *parts]
-    offset_count = len(blobs)
+    offset_count = len(blobs) + 1  # one per blob + a trailing end sentinel
     # Header: one uint64 for offset_count, then offset_count uint64 offsets.
     header_len = 8 * (1 + offset_count)
     offsets = []
@@ -99,6 +108,7 @@ def pack_ws_v1(channel: str, parts: list[bytes]) -> bytes:
     for b in blobs:
         offsets.append(pos)
         pos += len(b)
+    offsets.append(pos)  # trailing sentinel: end of the last blob == total length
     out = bytearray()
     out += struct.pack("<Q", offset_count)
     for off in offsets:
@@ -109,19 +119,26 @@ def pack_ws_v1(channel: str, parts: list[bytes]) -> bytes:
 
 
 def unpack_ws_v1(data: bytes) -> tuple[str, list[bytes]]:
-    """Inverse of :func:`pack_ws_v1`. Returns ``(channel, parts)``."""
+    """Inverse of :func:`pack_ws_v1`. Returns ``(channel, parts)``.
+
+    The offset table holds ``offset_count`` entries: one start per blob plus a
+    trailing sentinel (total length). The blobs are the spans between
+    consecutive offsets, so there are ``offset_count - 1`` blobs (channel +
+    parts). This matches jupyter_server's ``deserialize_msg_from_ws_v1``.
+    """
     if len(data) < 8:
         raise ProtocolError("message shorter than offset_count")
     (offset_count,) = struct.unpack_from("<Q", data, 0)
     # Header occupies: 1 uint64 (offset_count) + offset_count uint64 offsets.
     need = 8 * (1 + offset_count)
-    if offset_count < 2 or len(data) < need:
+    # Need at least: channel + 1 part + trailing sentinel == 3 offsets.
+    if offset_count < 3 or len(data) < need:
         raise ProtocolError("truncated offset table")
     offsets = [struct.unpack_from("<Q", data, 8 * (i + 1))[0] for i in range(offset_count)]
-    bounds = offsets + [len(data)]
+    n_blobs = offset_count - 1
     blobs = []
-    for i in range(offset_count):
-        start, end = bounds[i], bounds[i + 1]
+    for i in range(n_blobs):
+        start, end = offsets[i], offsets[i + 1]
         if not (need <= start <= end <= len(data)):
             raise ProtocolError("offset out of range")
         blobs.append(data[start:end])

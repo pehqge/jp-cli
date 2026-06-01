@@ -34,6 +34,7 @@ invoking any mutating method here (put/mkdir/rename/delete).
 from __future__ import annotations
 
 import base64
+import ipaddress
 import json
 import ssl
 import urllib.error
@@ -124,6 +125,23 @@ def _looks_utf8_text(data: bytes) -> bool:
     return True
 
 
+def _is_loopback_host(host: str | None) -> bool:
+    """True only for the loopback interface (``localhost`` or a 127/8 / ::1 IP).
+
+    Used to permit a token over plain ``http://`` for a strictly local server.
+    Anything that is not provably loopback (including a missing host) is False,
+    so the cleartext-token guard stays in force for every real network address.
+    """
+    if not host:
+        return False
+    if host.lower() == "localhost":
+        return True
+    try:
+        return ipaddress.ip_address(host).is_loopback
+    except ValueError:
+        return False
+
+
 class Api:
     """Contents API client. One instance per repo/session."""
 
@@ -135,6 +153,7 @@ class Api:
         timeout: float = _DEFAULT_TIMEOUT,
         ssl_context: ssl.SSLContext | None = None,
         large_file_warn_bytes: int = _LARGE_FILE_WARN_BYTES,
+        _allow_http_localhost: bool = False,
     ) -> None:
         self.base_url = base_url.rstrip("/")
         self._token = token
@@ -145,12 +164,21 @@ class Api:
         self._ssl_context = ssl_context or ssl.create_default_context()
         ui.register_secret(token)
 
-        scheme = urllib.parse.urlsplit(self.base_url).scheme
+        split = urllib.parse.urlsplit(self.base_url)
+        scheme = split.scheme
         if scheme not in ("http", "https"):
             raise NetworkError(f"unsupported base_url scheme: {scheme!r}")
         if scheme == "http" and token:
-            # Never transmit credentials over cleartext.
-            raise AuthError("refusing to send a token over plain http:// -- use https://")
+            # Never transmit credentials over cleartext -- UNLESS the host is the
+            # loopback interface AND the caller explicitly opted in. Loopback
+            # traffic never leaves the machine (no network to sniff), so a token
+            # over http://127.0.0.1 is genuinely safe; this exists solely so a
+            # local throwaway jupyter_server can be exercised in tests. The guard
+            # is private (leading underscore) and refuses any non-loopback host.
+            if _allow_http_localhost and _is_loopback_host(split.hostname):
+                pass
+            else:
+                raise AuthError("refusing to send a token over plain http:// -- use https://")
 
     # --- low-level request --------------------------------------------------
     def _url(self, api_path: str) -> str:

@@ -46,6 +46,7 @@ class KernelConn:
         reconnect: Callable[[], tuple[Any, str]] | None = None,
         max_reconnects: int = 3,
         sleep_fn: Callable[[float], None] = time.sleep,
+        poll_interval: float = 0.01,
     ) -> None:
         self._ws = ws
         self._comm_id = comm_id
@@ -53,6 +54,12 @@ class KernelConn:
         self._reconnect = reconnect
         self._max_reconnects = max_reconnects
         self._sleep_fn = sleep_fn
+        # Wait between idle polls so the poll budget spans wall-clock seconds, not
+        # microseconds. A real kernel takes time to import the agent + register
+        # the comm target + execute an op, so a sleepless busy-poll would burn
+        # through _max_polls long before the first reply lands (it never does
+        # against the in-process simulator, which replies on the first drain).
+        self._poll_interval = poll_interval
         self._rid = 0
         self._pending: dict[int, tuple[dict, list[bytes]]] = {}
 
@@ -106,12 +113,17 @@ class KernelConn:
                 return self._pending.pop(rid)
             if getattr(self._ws, "closed", False):
                 raise WebSocketError("kernel websocket closed before a reply arrived")
-            for raw in self._ws.read_messages():
+            messages = self._ws.read_messages()
+            for raw in messages:
                 self._absorb(raw)
             if getattr(self._ws, "closed", False) and rid not in self._pending:
                 raise WebSocketError("kernel websocket closed before a reply arrived")
             if rid in self._pending:
                 return self._pending.pop(rid)
+            # Nothing arrived this pass: yield briefly so the budget measures
+            # real time, letting a slow kernel catch up instead of spinning hot.
+            if not messages:
+                self._sleep_fn(self._poll_interval)
         raise RpcTimeout(f"no reply for rid={rid} op={op}")
 
     def _do_reconnect(self, attempt: int) -> None:
