@@ -626,11 +626,12 @@ class Api:
             raise
 
     def kernel_ws_url(self, kernel_id: str) -> str:
-        """Derive ``wss://.../kernels/<id>/channels``. Token never in URL.
+        """Derive ``wss://.../api/kernels/<id>/channels``. Token never in URL.
 
-        ``base_url`` already includes the api root (e.g. ``/api``), so we
-        just swap the scheme and append the kernels path directly -- no extra
-        ``api/`` prefix.
+        ``base_url`` is the single-user server root WITHOUT a trailing ``/api``
+        (same convention as ``terminal_ws_url``). We swap the scheme and
+        prepend the ``api/`` segment explicitly so the websocket path is
+        correct on the real server.
         """
         server = self.base_url
         if server.startswith("https://"):
@@ -639,7 +640,7 @@ class Api:
             ws_base = "ws://" + server[len("http://") :]
         else:
             raise NetworkError(f"unsupported base_url scheme for websocket: {server!r}")
-        return f"{ws_base.rstrip('/')}/kernels/{kernel_id}/channels"
+        return f"{ws_base.rstrip('/')}/api/kernels/{kernel_id}/channels"
 
     # --- helpers ------------------------------------------------------------
     @staticmethod
