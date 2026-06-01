@@ -24,6 +24,16 @@ def test_call_increments_rid(tmp_path):
     assert r1["rid"] != r2["rid"]
 
 
+def test_call_sends_buffers(tmp_path):
+    ws = FakeKernelWS(root=str(tmp_path), writable=True)
+    conn = KernelConn(ws, comm_id="c1", session="s")
+    ws.open_comm(comm_id="c1", target="jp.fs")
+
+    resp, _ = conn.call(fsrpc.OP_WRITE, path="x.txt", buffers=[b"data"])
+    assert resp["ok"] is True
+    assert (tmp_path / "x.txt").read_bytes() == b"data"
+
+
 def test_call_raises_on_timeout_with_no_reply(tmp_path):
     import pytest
 

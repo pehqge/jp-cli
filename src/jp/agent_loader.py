@@ -27,7 +27,7 @@ def build_bootstrap(*, root: str, target: str = "jp.fs") -> str:
         f"        @comm.on_msg\n"
         f"        def _on_msg(msg):\n"
         f'            req = msg["content"]["data"]\n'
-        f"            resp, buffers = _agent.handle(req)\n"
+        f'            resp, buffers = _agent.handle(req, msg.get("buffers"))\n'
         f"            comm.send(resp, buffers=buffers)\n"
         f"\n"
         f"    get_ipython().kernel.comm_manager.register_target({target!r}, _target)\n"

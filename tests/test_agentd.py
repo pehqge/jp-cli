@@ -108,22 +108,102 @@ def test_statmachine_op_returns_machine_dict(tmp_path):
     assert buffers == []
 
 
-def test_agent_source_has_no_write_syscalls():
-    """Safety Charter rule 2: the Phase 1 agent must contain NO write/delete path."""
-    if hasattr(agentd, "SOURCE"):
-        src = agentd.SOURCE
-    else:
-        with open(agentd.__file__) as fh:
-            src = fh.read()
-    for forbidden in (
-        "os.remove",
-        "os.unlink",
-        "os.rmdir",
-        "shutil.rmtree",
-        "os.pwrite",
-        '"wb"',
-        "'wb'",
-        "os.rename",
-        "send2trash",
-    ):
-        assert forbidden not in src, f"forbidden write primitive present: {forbidden}"
+def test_readonly_agent_refuses_all_writes(tmp_path):
+    """THE safety guard: a read-only agent provably refuses EVERY write with EROFS."""
+    root = tmp_path / "root"
+    (root / "sub").mkdir(parents=True)
+    (root / "f.txt").write_bytes(b"keep")
+    a = agentd.Agent(str(root))  # writable defaults False
+    cases = [
+        (fsrpc.request(fsrpc.OP_WRITE, rid=1, path="new.txt"), [b"x"]),
+        (fsrpc.request(fsrpc.OP_MKDIR, rid=2, path="newdir"), None),
+        (fsrpc.request(fsrpc.OP_RENAME, rid=3, src="f.txt", dst="g.txt"), None),
+        (fsrpc.request(fsrpc.OP_UNLINK, rid=4, path="f.txt"), None),
+        (fsrpc.request(fsrpc.OP_RMDIR, rid=5, path="sub"), None),
+    ]
+    for req, bufs in cases:
+        resp, _ = a.handle(req, bufs)
+        assert resp["ok"] is False
+        assert resp["code"] == fsrpc.E_ROFS, req["op"]
+    # Nothing was touched.
+    assert (root / "f.txt").read_bytes() == b"keep"
+    assert (root / "sub").is_dir()
+    assert not (root / "new.txt").exists()
+    assert not (root / "newdir").exists()
+
+
+def test_writable_agent_writes_atomically(tmp_path):
+    root = tmp_path / "root"
+    root.mkdir()
+    a = agentd.Agent(str(root), writable=True)
+    resp, _ = a.handle(fsrpc.request(fsrpc.OP_WRITE, rid=1, path="new.txt"), [b"hello"])
+    assert resp["ok"] is True and resp["size"] == 5
+    assert (root / "new.txt").read_bytes() == b"hello"
+
+
+def test_writable_write_refuses_symlink_dest(tmp_path):
+    root = tmp_path / "root"
+    root.mkdir()
+    outside = tmp_path / "outside.txt"
+    outside.write_bytes(b"SECRET")
+    os.symlink(str(outside), str(root / "link.txt"))
+    a = agentd.Agent(str(root), writable=True)
+    resp, _ = a.handle(fsrpc.request(fsrpc.OP_WRITE, rid=1, path="link.txt"), [b"x"])
+    assert resp["ok"] is False and resp["code"] == fsrpc.E_ACCES
+    assert outside.read_bytes() == b"SECRET"  # target untouched
+
+
+def test_writable_write_jails_parent_escape(tmp_path):
+    root = tmp_path / "root"
+    root.mkdir()
+    a = agentd.Agent(str(root), writable=True)
+    resp, _ = a.handle(fsrpc.request(fsrpc.OP_WRITE, rid=1, path="../evil.txt"), [b"x"])
+    assert resp["ok"] is False and resp["code"] == fsrpc.E_ACCES
+    assert not (tmp_path / "evil.txt").exists()
+
+
+def test_writable_mkdir_rename_unlink_rmdir(tmp_path):
+    root = tmp_path / "root"
+    (root / "sub").mkdir(parents=True)
+    (root / "file.txt").write_bytes(b"data")
+    (root / "filled").mkdir()
+    (root / "filled" / "inner.txt").write_bytes(b"x")
+    a = agentd.Agent(str(root), writable=True)
+
+    # mkdir happy path
+    resp, _ = a.handle(fsrpc.request(fsrpc.OP_MKDIR, rid=1, path="newdir"))
+    assert resp["ok"] is True and (root / "newdir").is_dir()
+
+    # rename happy path
+    resp, _ = a.handle(fsrpc.request(fsrpc.OP_RENAME, rid=2, src="file.txt", dst="renamed.txt"))
+    assert resp["ok"] is True
+    assert (root / "renamed.txt").read_bytes() == b"data" and not (root / "file.txt").exists()
+
+    # unlink happy path
+    resp, _ = a.handle(fsrpc.request(fsrpc.OP_UNLINK, rid=3, path="renamed.txt"))
+    assert resp["ok"] is True and not (root / "renamed.txt").exists()
+
+    # rmdir happy path
+    resp, _ = a.handle(fsrpc.request(fsrpc.OP_RMDIR, rid=4, path="sub"))
+    assert resp["ok"] is True and not (root / "sub").exists()
+
+    # rmdir on non-empty dir -> ENOTEMPTY
+    resp, _ = a.handle(fsrpc.request(fsrpc.OP_RMDIR, rid=5, path="filled"))
+    assert resp["ok"] is False and resp["code"] == fsrpc.E_NOTEMPTY
+    assert (root / "filled").is_dir()
+
+    # unlink on a directory -> EISDIR
+    resp, _ = a.handle(fsrpc.request(fsrpc.OP_UNLINK, rid=6, path="filled"))
+    assert resp["ok"] is False and resp["code"] == fsrpc.E_ISDIR
+    assert (root / "filled").is_dir()
+
+
+def test_rename_dst_must_be_in_jail(tmp_path):
+    root = tmp_path / "root"
+    root.mkdir()
+    (root / "real.txt").write_bytes(b"data")
+    a = agentd.Agent(str(root), writable=True)
+    resp, _ = a.handle(fsrpc.request(fsrpc.OP_RENAME, rid=1, src="real.txt", dst="../escape"))
+    assert resp["ok"] is False and resp["code"] == fsrpc.E_ACCES
+    assert (root / "real.txt").read_bytes() == b"data"  # original untouched
+    assert not (tmp_path / "escape").exists()

@@ -4,15 +4,22 @@ This module is imported by tests (so its logic is unit-tested directly) AND its
 source text is injected into a kernel at runtime (see jp.agent_loader). It must
 therefore import nothing from ``jp`` and nothing third-party.
 
-PHASE 1: READ-ONLY. It can ``ping``/``stat``/``readdir``/``read`` under a single
-configured root, and it refuses -- via an independent realpath jail -- any path
-that escapes that root, is absolute, hidden, or reached through an escaping
-symlink. There is deliberately NO write/delete/rename code path (Safety Charter
-rule 2; enforced by tests/test_agentd.py::test_agent_source_has_no_write_syscalls).
+It can ``ping``/``stat``/``readdir``/``read`` under a single configured root, and
+it refuses -- via an independent realpath jail -- any path that escapes that
+root, is absolute, hidden, or reached through an escaping symlink.
+
+WRITE ops exist in this source but are GATED BEHAVIORALLY: an Agent is read-only
+unless constructed with ``writable=True``. A read-only agent provably refuses
+EVERY write op with EROFS (tests/test_agentd.py::test_readonly_agent_refuses_all_writes).
+Writes are whole-file and atomic (temp file in the same dir + fsync + os.replace),
+jailed (same realpath jail), and refuse to write through a symlink. Removals use
+os.remove/os.rmdir -- never a server-side Contents API DELETE.
 """
 
 from __future__ import annotations
 
+import contextlib
+import errno
 import os
 import posixpath
 import subprocess
@@ -20,7 +27,15 @@ import subprocess
 # Mirror jp.fsrpc constants so the agent needs no jp import when injected.
 OP_PING, OP_STAT, OP_READDIR, OP_READ = "ping", "stat", "readdir", "read"
 OP_STATMACHINE = "statmachine"
+OP_WRITE, OP_MKDIR, OP_RENAME, OP_UNLINK, OP_RMDIR = (
+    "write",
+    "mkdir",
+    "rename",
+    "unlink",
+    "rmdir",
+)
 E_NOENT, E_NOTDIR, E_ISDIR, E_ACCES, E_IO = "ENOENT", "ENOTDIR", "EISDIR", "EACCES", "EIO"
+E_EXIST, E_NOTEMPTY, E_ROFS = "EEXIST", "ENOTEMPTY", "EROFS"
 
 # Read in capped chunks so a single op can never balloon memory (defense in
 # depth; the client also bounds ``length``).
@@ -64,10 +79,20 @@ class JailError(Exception):
     pass
 
 
+class ReadOnlyError(Exception):
+    """Raised when a write op is attempted on a read-only agent."""
+
+
 class Agent:
-    def __init__(self, root: str) -> None:
+    def __init__(self, root: str, *, writable: bool = False) -> None:
         # The one directory the agent may ever touch. Resolve it once.
         self.root = os.path.realpath(root)
+        # Writes are refused unless explicitly enabled (default read-only).
+        self.writable = bool(writable)
+
+    def _require_writable(self) -> None:
+        if not self.writable:
+            raise ReadOnlyError("agent is read-only")
 
     # --- jail ---------------------------------------------------------------
     def _resolve(self, rel: str) -> str:
@@ -91,7 +116,7 @@ class Agent:
         return target
 
     # --- dispatch -----------------------------------------------------------
-    def handle(self, req: dict) -> tuple[dict, list[bytes]]:
+    def handle(self, req: dict, buffers: list[bytes] | None = None) -> tuple[dict, list[bytes]]:
         """Return (response_dict, buffers). Never raises; errors become responses."""
         rid = req.get("rid")
         op = req.get("op")
@@ -106,15 +131,34 @@ class Agent:
                 return self._read(rid, req["path"], int(req["offset"]), int(req["length"]))
             if op == OP_STATMACHINE:
                 return self._statmachine(rid), []
+            if op == OP_WRITE:
+                data = (buffers or [b""])[0]
+                return self._write(rid, req["path"], data), []
+            if op == OP_MKDIR:
+                return self._mkdir(rid, req["path"]), []
+            if op == OP_RENAME:
+                return self._rename(rid, req["src"], req["dst"]), []
+            if op == OP_UNLINK:
+                return self._unlink(rid, req["path"]), []
+            if op == OP_RMDIR:
+                return self._rmdir(rid, req["path"]), []
             return self._err(rid, E_IO, f"unknown op {op!r}"), []
+        except ReadOnlyError as exc:
+            return self._err(rid, E_ROFS, str(exc)), []
         except JailError as exc:
             return self._err(rid, E_ACCES, str(exc)), []
+        except FileExistsError:
+            return self._err(rid, E_EXIST, "file exists"), []
         except FileNotFoundError:
             return self._err(rid, E_NOENT, "no such file or directory"), []
         except NotADirectoryError:
             return self._err(rid, E_NOTDIR, "not a directory"), []
         except IsADirectoryError:
             return self._err(rid, E_ISDIR, "is a directory"), []
+        except OSError as exc:
+            if exc.errno == errno.ENOTEMPTY:
+                return self._err(rid, E_NOTEMPTY, "directory not empty"), []
+            return self._err(rid, E_IO, type(exc).__name__), []
         except Exception as exc:  # never leak a traceback to the wire
             return self._err(rid, E_IO, type(exc).__name__), []
 
@@ -162,6 +206,67 @@ class Agent:
         finally:
             os.close(fd)
         return {"rid": rid, "ok": True, "size": len(data)}, [data]
+
+    # --- write ops (gated by ``writable``) ----------------------------------
+    def _write(self, rid, path, data: bytes) -> dict:
+        """Atomic whole-file write into an EXISTING parent dir, never via a symlink."""
+        self._require_writable()
+        # _resolve realpaths the existing prefix; a not-yet-existing leaf is fine.
+        target = self._resolve(path)
+        # Refuse to clobber a symlink (would write through to its target).
+        if os.path.islink(target):
+            raise JailError("refusing to write through a symlink")
+        parent = os.path.dirname(target)
+        if not os.path.isdir(parent):
+            raise FileNotFoundError(parent)
+        tmp = os.path.join(parent, f".jp-tmp-{rid}-{os.getpid()}")
+        flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC | getattr(os, "O_NOFOLLOW", 0)
+        fd = os.open(tmp, flags, 0o600)
+        try:
+            written = 0
+            view = memoryview(data)
+            while written < len(view):
+                written += os.write(fd, view[written:])
+            os.fsync(fd)
+        finally:
+            os.close(fd)
+        try:
+            os.replace(tmp, target)
+        except BaseException:
+            with contextlib.suppress(OSError):
+                os.remove(tmp)
+            raise
+        return {"rid": rid, "ok": True, "size": len(data)}
+
+    def _mkdir(self, rid, path) -> dict:
+        self._require_writable()
+        target = self._resolve(path)
+        os.mkdir(target)  # parent must exist; FileExistsError -> EEXIST
+        return {"rid": rid, "ok": True}
+
+    def _rename(self, rid, src, dst) -> dict:
+        self._require_writable()
+        # BOTH endpoints must resolve inside root -- the critical jail check.
+        src_t = self._resolve(src)
+        dst_t = self._resolve(dst)
+        if os.path.islink(dst_t):
+            raise JailError("refusing to rename onto a symlink")
+        os.rename(src_t, dst_t)
+        return {"rid": rid, "ok": True}
+
+    def _unlink(self, rid, path) -> dict:
+        self._require_writable()
+        target = self._resolve(path)
+        if os.path.isdir(target) and not os.path.islink(target):
+            return self._err(rid, E_ISDIR, "is a directory")
+        os.remove(target)  # removes a file, or the symlink entry (not its target)
+        return {"rid": rid, "ok": True}
+
+    def _rmdir(self, rid, path) -> dict:
+        self._require_writable()
+        target = self._resolve(path)
+        os.rmdir(target)  # never recursive; ENOTEMPTY -> E_NOTEMPTY
+        return {"rid": rid, "ok": True}
 
     def _statmachine(self, rid) -> dict:
         """Read-only snapshot of host stats. Every source degrades gracefully."""

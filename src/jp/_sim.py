@@ -27,8 +27,8 @@ class FakeKernelWS:
     bootstrap execute_request).
     """
 
-    def __init__(self, root: str) -> None:
-        self._agent = Agent(root)
+    def __init__(self, root: str, *, writable: bool = False) -> None:
+        self._agent = Agent(root, writable=writable)
         self._comm_ids: set[str] = set()
         self._outbox: list[bytes] = []
         self.closed = False
@@ -44,7 +44,8 @@ class FakeKernelWS:
         if comm_id not in self._comm_ids:
             return  # unknown comm: silently dropped, like a real kernel
         req = content["data"]
-        resp, buffers = self._agent.handle(req)
+        in_buffers = list(blobs[4:])  # client-supplied comm buffers (e.g. write data)
+        resp, buffers = self._agent.handle(req, in_buffers)
         reply_parts, _ = kp.build_comm_msg(
             comm_id, resp, buffers=buffers, session="agent", msg_id=kp.new_id()
         )

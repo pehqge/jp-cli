@@ -2,7 +2,7 @@ import pytest
 
 from jp._sim import FakeKernelWS
 from jp.kernel_conn import KernelConn
-from jp.remote_fs import RemoteAccessDenied, RemoteFS, RemoteNotFound
+from jp.remote_fs import RemoteAccessDenied, RemoteFS, RemoteNotFound, RemoteReadOnly
 
 
 @pytest.fixture
@@ -13,6 +13,13 @@ def rfs(tmp_path):
     ws = FakeKernelWS(root=str(tmp_path))
     ws.open_comm(comm_id="c1", target="jp.fs")
     return RemoteFS(KernelConn(ws, comm_id="c1", session="s"))
+
+
+@pytest.fixture
+def wrfs(tmp_path):
+    ws = FakeKernelWS(root=str(tmp_path), writable=True)
+    ws.open_comm(comm_id="c1", target="jp.fs")
+    return RemoteFS(KernelConn(ws, comm_id="c1", session="s")), tmp_path
 
 
 def test_stat(rfs):
@@ -44,3 +51,35 @@ def test_missing_raises(rfs):
 def test_traversal_raises_access_denied(rfs):
     with pytest.raises(RemoteAccessDenied):
         rfs.read("../escape", 0, 1)
+
+
+def test_write_round_trip(wrfs):
+    fs, root = wrfs
+    fs.write("note.txt", b"contents")
+    assert fs.read("note.txt", 0, 8) == b"contents"
+    assert (root / "note.txt").read_bytes() == b"contents"
+
+
+def test_mkdir_then_listdir(wrfs):
+    fs, _ = wrfs
+    fs.mkdir("created")
+    assert "created" in [e.name for e in fs.listdir("")]
+
+
+def test_rename(wrfs):
+    fs, root = wrfs
+    fs.write("a.txt", b"x")
+    fs.rename("a.txt", "b.txt")
+    assert (root / "b.txt").read_bytes() == b"x" and not (root / "a.txt").exists()
+
+
+def test_unlink_removes(wrfs):
+    fs, root = wrfs
+    fs.write("gone.txt", b"x")
+    fs.unlink("gone.txt")
+    assert not (root / "gone.txt").exists()
+
+
+def test_readonly_write_raises(rfs):
+    with pytest.raises(RemoteReadOnly):
+        rfs.write("nope.txt", b"x")

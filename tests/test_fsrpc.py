@@ -1,13 +1,22 @@
 from jp import fsrpc
 
 
-def test_op_constants_are_read_only_set_in_phase1():
+def test_op_constants_present():
+    # Read-only ops still equal their strings.
     assert fsrpc.OP_PING == "ping"
     assert fsrpc.OP_STAT == "stat"
     assert fsrpc.OP_READDIR == "readdir"
     assert fsrpc.OP_READ == "read"
-    # Phase 1 is read-only: write ops must NOT exist yet.
-    assert not hasattr(fsrpc, "OP_WRITE")
+    # Write ops now exist (gated behaviorally by the agent, not by absence).
+    assert fsrpc.OP_WRITE == "write"
+    assert fsrpc.OP_MKDIR == "mkdir"
+    assert fsrpc.OP_RENAME == "rename"
+    assert fsrpc.OP_UNLINK == "unlink"
+    assert fsrpc.OP_RMDIR == "rmdir"
+    # New error codes exist.
+    assert fsrpc.E_EXIST == "EEXIST"
+    assert fsrpc.E_NOTEMPTY == "ENOTEMPTY"
+    assert fsrpc.E_ROFS == "EROFS"
 
 
 def test_request_and_ok_error_envelopes():

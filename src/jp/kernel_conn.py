@@ -28,14 +28,21 @@ class KernelConn:
         self._rid = 0
         self._pending: dict[int, tuple[dict, list[bytes]]] = {}
 
-    def call(self, op: str, *, _max_polls: int = 10000, **fields: Any) -> tuple[dict, list[bytes]]:
+    def call(
+        self,
+        op: str,
+        *,
+        _max_polls: int = 10000,
+        buffers: list[bytes] | None = None,
+        **fields: Any,
+    ) -> tuple[dict, list[bytes]]:
         self._rid += 1
         rid = self._rid
         req = fsrpc.request(op, rid=rid, **fields)
         parts, _ = kp.build_comm_msg(
-            self._comm_id, req, buffers=None, session=self._session, msg_id=kp.new_id()
+            self._comm_id, req, buffers=buffers, session=self._session, msg_id=kp.new_id()
         )
-        self._ws.send_binary(kp.pack_ws_v1("shell", parts))
+        self._ws.send_binary(kp.pack_ws_v1("shell", [*parts, *(buffers or [])]))
 
         for _ in range(_max_polls):
             if rid in self._pending:

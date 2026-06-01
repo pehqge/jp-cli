@@ -28,6 +28,18 @@ class RemoteAccessDenied(RemoteFsError):
     pass
 
 
+class RemoteReadOnly(RemoteFsError):
+    pass
+
+
+class RemoteExists(RemoteFsError):
+    pass
+
+
+class RemoteNotEmpty(RemoteFsError):
+    pass
+
+
 @dataclass
 class Stat:
     type: str  # "file" | "directory"
@@ -42,7 +54,13 @@ class Entry:
     size: int
 
 
-_EXC = {fsrpc.E_NOENT: RemoteNotFound, fsrpc.E_ACCES: RemoteAccessDenied}
+_EXC = {
+    fsrpc.E_NOENT: RemoteNotFound,
+    fsrpc.E_ACCES: RemoteAccessDenied,
+    fsrpc.E_ROFS: RemoteReadOnly,
+    fsrpc.E_EXIST: RemoteExists,
+    fsrpc.E_NOTEMPTY: RemoteNotEmpty,
+}
 
 
 def _check(resp: dict) -> dict:
@@ -93,3 +111,25 @@ class RemoteFS:
             pos += len(chunk)
             remaining -= len(chunk)
         return bytes(out)
+
+    # --- write ops (refused with RemoteReadOnly by a read-only agent) --------
+    def write(self, path: str, data: bytes) -> int:
+        resp, _ = self._conn.call(fsrpc.OP_WRITE, path=path, buffers=[data])
+        _check(resp)
+        return int(resp.get("size", 0))
+
+    def mkdir(self, path: str) -> None:
+        resp, _ = self._conn.call(fsrpc.OP_MKDIR, path=path)
+        _check(resp)
+
+    def rename(self, src: str, dst: str) -> None:
+        resp, _ = self._conn.call(fsrpc.OP_RENAME, src=src, dst=dst)
+        _check(resp)
+
+    def unlink(self, path: str) -> None:
+        resp, _ = self._conn.call(fsrpc.OP_UNLINK, path=path)
+        _check(resp)
+
+    def rmdir(self, path: str) -> None:
+        resp, _ = self._conn.call(fsrpc.OP_RMDIR, path=path)
+        _check(resp)
