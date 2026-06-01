@@ -73,6 +73,11 @@ class RemoteFS:
             Entry(name=e["name"], type=e["type"], size=e.get("size", 0)) for e in resp["entries"]
         ]
 
+    def statmachine(self) -> dict:
+        resp, _ = self._conn.call(fsrpc.OP_STATMACHINE)
+        _check(resp)
+        return resp.get("machine", {})
+
     def read(self, path: str, offset: int, length: int) -> bytes:
         out = bytearray()
         remaining = length

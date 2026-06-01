@@ -15,14 +15,49 @@ from __future__ import annotations
 
 import os
 import posixpath
+import subprocess
 
 # Mirror jp.fsrpc constants so the agent needs no jp import when injected.
 OP_PING, OP_STAT, OP_READDIR, OP_READ = "ping", "stat", "readdir", "read"
+OP_STATMACHINE = "statmachine"
 E_NOENT, E_NOTDIR, E_ISDIR, E_ACCES, E_IO = "ENOENT", "ENOTDIR", "EISDIR", "EACCES", "EIO"
 
 # Read in capped chunks so a single op can never balloon memory (defense in
 # depth; the client also bounds ``length``).
 MAX_READ = 8 * 1024 * 1024
+
+
+def parse_meminfo(text: str) -> dict:
+    """Parse /proc/meminfo -> {'mem_total_kb', 'mem_available_kb'} (missing keys omitted)."""
+    out = {}
+    for line in text.splitlines():
+        if line.startswith("MemTotal:"):
+            out["mem_total_kb"] = int(line.split()[1])
+        elif line.startswith("MemAvailable:"):
+            out["mem_available_kb"] = int(line.split()[1])
+    return out
+
+
+def parse_nvidia_smi(text: str) -> list:
+    """Parse nvidia-smi csv (name,memory.used,memory.total,utilization.gpu) -> list of dicts."""
+    gpus = []
+    for line in text.strip().splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        cols = [c.strip() for c in line.split(",")]
+        if len(cols) < 4:
+            continue
+        name, used, total, util = cols[0], cols[1], cols[2], cols[3]
+        gpu: dict = {"name": name}
+        try:
+            gpu["mem_used_mb"] = int(float(used))
+            gpu["mem_total_mb"] = int(float(total))
+            gpu["util_pct"] = int(float(util))
+        except ValueError:
+            pass
+        gpus.append(gpu)
+    return gpus
 
 
 class JailError(Exception):
@@ -69,6 +104,8 @@ class Agent:
                 return self._readdir(rid, req["path"]), []
             if op == OP_READ:
                 return self._read(rid, req["path"], int(req["offset"]), int(req["length"]))
+            if op == OP_STATMACHINE:
+                return self._statmachine(rid), []
             return self._err(rid, E_IO, f"unknown op {op!r}"), []
         except JailError as exc:
             return self._err(rid, E_ACCES, str(exc)), []
@@ -125,6 +162,45 @@ class Agent:
         finally:
             os.close(fd)
         return {"rid": rid, "ok": True, "size": len(data)}, [data]
+
+    def _statmachine(self, rid) -> dict:
+        """Read-only snapshot of host stats. Every source degrades gracefully."""
+        machine: dict = {}
+
+        machine["cpu_count"] = os.cpu_count()
+
+        try:
+            with open("/proc/meminfo") as fh:
+                machine.update(parse_meminfo(fh.read()))
+        except OSError:
+            pass
+
+        try:
+            st = os.statvfs(self.root)
+            machine["disk_total_bytes"] = st.f_frsize * st.f_blocks
+            machine["disk_free_bytes"] = st.f_frsize * st.f_bavail
+        except (OSError, AttributeError):  # statvfs absent on Windows
+            pass
+
+        gpus: list = []
+        try:
+            proc = subprocess.run(
+                [
+                    "nvidia-smi",
+                    "--query-gpu=name,memory.used,memory.total,utilization.gpu",
+                    "--format=csv,noheader,nounits",
+                ],
+                capture_output=True,
+                text=True,
+                timeout=5,
+            )
+            if proc.returncode == 0:
+                gpus = parse_nvidia_smi(proc.stdout)
+        except (FileNotFoundError, OSError, subprocess.SubprocessError):
+            gpus = []
+        machine["gpus"] = gpus
+
+        return {"rid": rid, "ok": True, "machine": machine}
 
     @staticmethod
     def _err(rid, code, message) -> dict:

@@ -28,6 +28,11 @@ def add_parser(subparsers: argparse._SubParsersAction) -> None:
         "--live", action="store_true", help="(blocked until certified) connect to the real server"
     )
     p.add_argument(
+        "--stats",
+        action="store_true",
+        help="(with --dry-run) also print the remote machine stats dashboard",
+    )
+    p.add_argument(
         "--mount",
         metavar="POINT",
         help=(
@@ -44,13 +49,18 @@ def run(args: argparse.Namespace) -> int:
             "jp live is in development: only '--dry-run --root <folder>' is enabled. "
             "The real-server path is disabled until the safety certification is complete."
         )
-    return _dry_run(args.root, getattr(args, "mount", None))
+    return _dry_run(
+        args.root,
+        getattr(args, "mount", None),
+        show_stats=getattr(args, "stats", False),
+    )
 
 
-def _dry_run(root: str | None, mountpoint: str | None = None) -> int:
+def _dry_run(root: str | None, mountpoint: str | None = None, show_stats: bool = False) -> int:
     if not root:
         raise SafetyError("--dry-run requires --root <folder>")
 
+    from .. import stats
     from .._sim import FakeKernelWS
     from ..kernel_conn import KernelConn
     from ..remote_fs import RemoteFS
@@ -70,6 +80,10 @@ def _dry_run(root: str | None, mountpoint: str | None = None) -> int:
             head = rfs.read(entry, 0, min(st.size, 64))
             verified += len(head)
     ui.success(f"{verified} bytes verified over the binary comm transport")
+
+    if show_stats:
+        ui.out("")
+        ui.out(stats.render_machine(rfs.statmachine()))
 
     if mountpoint:
         from ..mount.os_mount import build_mount_plan, build_unmount_plan

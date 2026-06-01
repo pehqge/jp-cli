@@ -82,6 +82,32 @@ def test_read_on_directory_is_eisdir(agent):
     assert resp["ok"] is False and resp["code"] == fsrpc.E_ISDIR
 
 
+def test_parse_meminfo():
+    text = "MemTotal: 32896744 kB\nMemAvailable: 20000000 kB\n"
+    assert agentd.parse_meminfo(text) == {
+        "mem_total_kb": 32896744,
+        "mem_available_kb": 20000000,
+    }
+
+
+def test_parse_nvidia_smi():
+    text = "NVIDIA H100, 1024, 81920, 37\nNVIDIA H100, 0, 81920, 0"
+    gpus = agentd.parse_nvidia_smi(text)
+    assert len(gpus) == 2
+    assert gpus[0]["util_pct"] == 37
+    assert gpus[1]["util_pct"] == 0
+    assert gpus[0]["name"] == "NVIDIA H100"
+
+
+def test_statmachine_op_returns_machine_dict(tmp_path):
+    a = agentd.Agent(str(tmp_path))
+    resp, buffers = a.handle(fsrpc.request(fsrpc.OP_STATMACHINE, rid=1))
+    assert resp["ok"] is True
+    assert "machine" in resp
+    assert "cpu_count" in resp["machine"]
+    assert buffers == []
+
+
 def test_agent_source_has_no_write_syscalls():
     """Safety Charter rule 2: the Phase 1 agent must contain NO write/delete path."""
     if hasattr(agentd, "SOURCE"):

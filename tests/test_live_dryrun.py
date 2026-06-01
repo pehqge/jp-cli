@@ -29,6 +29,14 @@ def test_live_path_is_blocked_in_phase1(tmp_path):
         live.run(args)
 
 
+def test_dry_run_stats_prints_machine(tmp_path, capsys):
+    args = argparse.Namespace(dry_run=True, root=str(tmp_path), live=False, stats=True)
+    rc = live.run(args)
+    out = capsys.readouterr().out
+    assert rc == EXIT_OK
+    assert "CPU" in out or "cpu" in out
+
+
 def test_dry_run_with_mount_prints_mount_command(tmp_path, capsys):
     (tmp_path / "f.txt").write_bytes(b"hi")
     args = argparse.Namespace(dry_run=True, root=str(tmp_path), live=False, mount="/tmp/jpmnt")

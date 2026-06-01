@@ -14,6 +14,7 @@ OP_PING = "ping"
 OP_STAT = "stat"
 OP_READDIR = "readdir"
 OP_READ = "read"
+OP_STATMACHINE = "statmachine"
 
 # Error codes (POSIX-flavoured, transport-neutral).
 E_NOENT = "ENOENT"  # no such file/dir
