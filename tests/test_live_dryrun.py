@@ -19,13 +19,14 @@ def test_dry_run_reports_success(tmp_path, capsys):
     assert "bytes verified" in out
 
 
-def test_live_path_is_blocked_in_phase1(tmp_path):
+def test_no_mode_raises_usage_error(tmp_path):
     import pytest
 
-    from jp.errors import SafetyError
+    from jp.errors import UsageError
 
-    args = argparse.Namespace(dry_run=False, root=None, live=True)
-    with pytest.raises(SafetyError):
+    # Neither --dry-run nor --live nor --print-agent -> usage error.
+    args = argparse.Namespace(dry_run=False, root=None, live=False, print_agent=False)
+    with pytest.raises(UsageError):
         live.run(args)
 
 
