@@ -27,3 +27,13 @@ def test_live_path_is_blocked_in_phase1(tmp_path):
     args = argparse.Namespace(dry_run=False, root=None, live=True)
     with pytest.raises(SafetyError):
         live.run(args)
+
+
+def test_dry_run_with_mount_prints_mount_command(tmp_path, capsys):
+    (tmp_path / "f.txt").write_bytes(b"hi")
+    args = argparse.Namespace(dry_run=True, root=str(tmp_path), live=False, mount="/tmp/jpmnt")
+    rc = live.run(args)
+    out = capsys.readouterr().out
+    assert rc == 0
+    assert "http://127.0.0.1:" in out  # the WebDAV url was printed
+    assert "/tmp/jpmnt" in out  # the mount command references the point

@@ -10,6 +10,7 @@ SafetyError. This guarantees nothing in Phase 1 can touch a real JupyterHub.
 from __future__ import annotations
 
 import argparse
+import sys
 
 from .. import ui
 from ..errors import EXIT_OK, SafetyError
@@ -26,6 +27,14 @@ def add_parser(subparsers: argparse._SubParsersAction) -> None:
     p.add_argument(
         "--live", action="store_true", help="(blocked until certified) connect to the real server"
     )
+    p.add_argument(
+        "--mount",
+        metavar="POINT",
+        help=(
+            "(with --dry-run) serve the simulated remote over WebDAV and print the "
+            "native-mount command for POINT"
+        ),
+    )
     p.set_defaults(func=run)
 
 
@@ -35,10 +44,10 @@ def run(args: argparse.Namespace) -> int:
             "jp live is in development: only '--dry-run --root <folder>' is enabled. "
             "The real-server path is disabled until the safety certification is complete."
         )
-    return _dry_run(args.root)
+    return _dry_run(args.root, getattr(args, "mount", None))
 
 
-def _dry_run(root: str | None) -> int:
+def _dry_run(root: str | None, mountpoint: str | None = None) -> int:
     if not root:
         raise SafetyError("--dry-run requires --root <folder>")
 
@@ -61,6 +70,33 @@ def _dry_run(root: str | None) -> int:
             head = rfs.read(entry, 0, min(st.size, 64))
             verified += len(head)
     ui.success(f"{verified} bytes verified over the binary comm transport")
+
+    if mountpoint:
+        from ..mount.os_mount import build_mount_plan, build_unmount_plan
+        from ..mount.webdav_server import DavServer
+
+        srv = DavServer(rfs).start()
+        try:
+            url = srv.url
+            plan = build_mount_plan(url, mountpoint, sys.platform)
+            unmount_argv = build_unmount_plan(url, mountpoint, sys.platform)
+            ui.out(f"\nWebDAV server: {url}")
+            ui.out(f"Mount note   : {plan.note}")
+            ui.out(f"Mount command: {' '.join(plan.argv)}")
+            ui.out(f"Umount cmd   : {' '.join(unmount_argv)}")
+            msg = (
+                "\nServer running at "
+                + url
+                + ". Mount with the command above, then press Enter here to stop."
+            )
+            if sys.stdin.isatty():
+                ui.out(msg)
+                input()
+            else:
+                ui.out(msg)
+        finally:
+            srv.stop()
+
     return EXIT_OK
 
 
