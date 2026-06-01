@@ -1,5 +1,6 @@
 # Local agent / editor state
 .claude/
+docs/superpowers/
 
 # Byte-compiled / optimized / caches
 __pycache__/
