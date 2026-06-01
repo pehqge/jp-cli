@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import json
 import os
+import struct
 from typing import Any
 
 PROTOCOL_VERSION = "5.3"
@@ -74,3 +75,55 @@ def build_comm_msg(
     """Return (4 dict-parts, n_buffers). The framing layer appends the buffers."""
     content = {"comm_id": comm_id, "data": data}
     return _parts("comm_msg", content, session=session, msg_id=msg_id), len(buffers or [])
+
+
+class ProtocolError(Exception):
+    """Malformed binary kernel-websocket message."""
+
+
+def pack_ws_v1(channel: str, parts: list[bytes]) -> bytes:
+    """Serialize a kernel message to the v1 binary WebSocket framing.
+
+    Layout (all integers little-endian, 8 bytes): ``offset_count`` then
+    ``offset_count`` offsets, then the channel name, then each message part
+    (header, parent_header, metadata, content, *buffers). Mirrors Jupyter
+    Server's ``serialize_msg_to_ws_v1``.
+    """
+    ch = channel.encode("utf-8")
+    blobs = [ch, *parts]
+    offset_count = len(blobs)
+    # Header: one uint64 for offset_count, then offset_count uint64 offsets.
+    header_len = 8 * (1 + offset_count)
+    offsets = []
+    pos = header_len
+    for b in blobs:
+        offsets.append(pos)
+        pos += len(b)
+    out = bytearray()
+    out += struct.pack("<Q", offset_count)
+    for off in offsets:
+        out += struct.pack("<Q", off)
+    for b in blobs:
+        out += b
+    return bytes(out)
+
+
+def unpack_ws_v1(data: bytes) -> tuple[str, list[bytes]]:
+    """Inverse of :func:`pack_ws_v1`. Returns ``(channel, parts)``."""
+    if len(data) < 8:
+        raise ProtocolError("message shorter than offset_count")
+    (offset_count,) = struct.unpack_from("<Q", data, 0)
+    # Header occupies: 1 uint64 (offset_count) + offset_count uint64 offsets.
+    need = 8 * (1 + offset_count)
+    if offset_count < 2 or len(data) < need:
+        raise ProtocolError("truncated offset table")
+    offsets = [struct.unpack_from("<Q", data, 8 * (i + 1))[0] for i in range(offset_count)]
+    bounds = offsets + [len(data)]
+    blobs = []
+    for i in range(offset_count):
+        start, end = bounds[i], bounds[i + 1]
+        if not (need <= start <= end <= len(data)):
+            raise ProtocolError("offset out of range")
+        blobs.append(data[start:end])
+    channel = blobs[0].decode("utf-8", "replace")
+    return channel, blobs[1:]

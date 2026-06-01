@@ -1,4 +1,5 @@
 import json
+import os
 
 from jp import kernel_proto as kp
 
@@ -37,3 +38,25 @@ def test_comm_msg_carries_data_and_marks_buffers():
     assert content["comm_id"] == "c1"
     assert content["data"] == {"op": "read"}
     assert len(parts) == 4
+
+
+def test_pack_unpack_ws_v1_roundtrip_with_buffers():
+    parts = [b'{"h":1}', b"{}", b"{}", b'{"c":2}', b"\x00\x01\xfe\xff", b"rawbytes"]
+    blob = kp.pack_ws_v1("shell", parts)
+    channel, out = kp.unpack_ws_v1(blob)
+    assert channel == "shell"
+    assert out == parts
+
+
+def test_pack_ws_v1_is_pure_binary_no_base64_inflation():
+    payload = os.urandom(4096)
+    blob = kp.pack_ws_v1("shell", [b"{}", b"{}", b"{}", b"{}", payload])
+    # The raw payload appears verbatim (binary, not base64) inside the blob.
+    assert payload in blob
+
+
+def test_unpack_ws_v1_rejects_truncated():
+    import pytest
+
+    with pytest.raises(kp.ProtocolError):
+        kp.unpack_ws_v1(b"\x01\x00")  # claims offsets it does not contain
