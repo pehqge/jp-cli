@@ -9,6 +9,8 @@ proves the bootstrap+comm path end to end.
 
 from __future__ import annotations
 
+import pytest
+
 from jp._sim import FakeKernelWS
 from jp.live_session import connect_live
 
@@ -65,3 +67,18 @@ def test_connect_live_injects_bootstrap_and_opens_comm(tmp_path):
 
     cleanup()
     assert "KID" in api.deleted
+
+
+def test_kernel_deleted_when_connect_fails(tmp_path):
+    """Issue #3: if the websocket connect (or any post-create step) fails, the
+    just-created kernel must be deleted so it does not leak on a GPU."""
+    api = FakeApi()
+
+    def ws_connect(url, headers):
+        raise RuntimeError("connect boom")
+
+    with pytest.raises(RuntimeError, match="connect boom"):
+        connect_live(api, prefix=str(tmp_path), token="t", ws_connect=ws_connect)
+
+    assert api.created == 1
+    assert api.deleted == ["KID"]  # the leaked kernel was cleaned up

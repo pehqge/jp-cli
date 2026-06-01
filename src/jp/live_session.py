@@ -53,20 +53,27 @@ def connect_live(
 
     def _establish() -> tuple[Any, str, str]:
         kid = api.create_kernel()
-        url = api.kernel_ws_url(kid)
-        ws = connect(url, {"Authorization": f"token {token}"})
+        # Anything after create_kernel() that fails would otherwise leak the
+        # just-created kernel on a (possibly GPU) slot. Delete it before re-raising.
+        try:
+            url = api.kernel_ws_url(kid)
+            ws = connect(url, {"Authorization": f"token {token}"})
 
-        # 1) Inject the agent bootstrap as a one-shot execute_request.
-        code = agent_loader.build_bootstrap(root=prefix, writable=writable)
-        exec_parts = kp.build_execute_request(code, session=session, msg_id=kp.new_id())
-        ws.send_binary(kp.pack_ws_v1("shell", exec_parts))
+            # 1) Inject the agent bootstrap as a one-shot execute_request.
+            code = agent_loader.build_bootstrap(root=prefix, writable=writable)
+            exec_parts = kp.build_execute_request(code, session=session, msg_id=kp.new_id())
+            ws.send_binary(kp.pack_ws_v1("shell", exec_parts))
 
-        # 2) Open the jp.fs comm so the agent's registered target instantiates it.
-        comm_id = kp.new_id()
-        open_parts = kp.build_comm_open(comm_id, "jp.fs", session=session, msg_id=kp.new_id())
-        ws.send_binary(kp.pack_ws_v1("shell", open_parts))
+            # 2) Open the jp.fs comm so the agent's registered target instantiates it.
+            comm_id = kp.new_id()
+            open_parts = kp.build_comm_open(comm_id, "jp.fs", session=session, msg_id=kp.new_id())
+            ws.send_binary(kp.pack_ws_v1("shell", open_parts))
 
-        return ws, comm_id, kid
+            return ws, comm_id, kid
+        except Exception:
+            with contextlib.suppress(Exception):
+                api.delete_kernel(kid)
+            raise
 
     ws, comm_id, kid = _establish()
     state["ws"], state["kid"] = ws, kid

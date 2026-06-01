@@ -115,6 +115,19 @@ class Agent:
             raise JailError("resolved path escapes root")
         return target
 
+    def _resolve_mutable(self, rel: str) -> str:
+        """Resolve for a MUTATING op, refusing the jail root itself.
+
+        Reads of the root (stat/readdir/read) stay legitimate via ``_resolve``;
+        but mutating the root -- rmdir("") would delete the configured prefix,
+        write("") would create a temp file in ``dirname(root)`` OUTSIDE the jail
+        -- is always refused.
+        """
+        target = self._resolve(rel)
+        if target == self.root:
+            raise JailError("refusing to mutate the jail root itself")
+        return target
+
     # --- dispatch -----------------------------------------------------------
     def handle(self, req: dict, buffers: list[bytes] | None = None) -> tuple[dict, list[bytes]]:
         """Return (response_dict, buffers). Never raises; errors become responses."""
@@ -212,7 +225,8 @@ class Agent:
         """Atomic whole-file write into an EXISTING parent dir, never via a symlink."""
         self._require_writable()
         # _resolve realpaths the existing prefix; a not-yet-existing leaf is fine.
-        target = self._resolve(path)
+        # The guard runs BEFORE any open(), so write("") never leaks a temp file.
+        target = self._resolve_mutable(path)
         # Refuse to clobber a symlink (would write through to its target).
         if os.path.islink(target):
             raise JailError("refusing to write through a symlink")
@@ -240,15 +254,15 @@ class Agent:
 
     def _mkdir(self, rid, path) -> dict:
         self._require_writable()
-        target = self._resolve(path)
+        target = self._resolve_mutable(path)
         os.mkdir(target)  # parent must exist; FileExistsError -> EEXIST
         return {"rid": rid, "ok": True}
 
     def _rename(self, rid, src, dst) -> dict:
         self._require_writable()
-        # BOTH endpoints must resolve inside root -- the critical jail check.
-        src_t = self._resolve(src)
-        dst_t = self._resolve(dst)
+        # BOTH endpoints must resolve inside root (and neither may BE the root).
+        src_t = self._resolve_mutable(src)
+        dst_t = self._resolve_mutable(dst)
         if os.path.islink(dst_t):
             raise JailError("refusing to rename onto a symlink")
         os.rename(src_t, dst_t)
@@ -256,7 +270,7 @@ class Agent:
 
     def _unlink(self, rid, path) -> dict:
         self._require_writable()
-        target = self._resolve(path)
+        target = self._resolve_mutable(path)
         if os.path.isdir(target) and not os.path.islink(target):
             return self._err(rid, E_ISDIR, "is a directory")
         os.remove(target)  # removes a file, or the symlink entry (not its target)
@@ -264,7 +278,7 @@ class Agent:
 
     def _rmdir(self, rid, path) -> dict:
         self._require_writable()
-        target = self._resolve(path)
+        target = self._resolve_mutable(path)
         os.rmdir(target)  # never recursive; ENOTEMPTY -> E_NOTEMPTY
         return {"rid": rid, "ok": True}
 

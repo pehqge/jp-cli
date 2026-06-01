@@ -8,8 +8,8 @@ Three modes, gated by an explicit flag:
                      kernel, injects the small file agent, opens the comm, and
                      serves the remote folder over loopback WebDAV.
   * ``--live --writable`` : as above, but local edits WRITE to the remote (still
-                     never recursive-deletes; a server-side checkpoint is taken
-                     before each overwrite).
+                     never recursive-deletes). There is NO automatic server-side
+                     undo -- overwrites are in place, so keep your own backup.
 
 This command NEVER auto-connects: the user must pass ``--live`` themselves, and
 unattended (non-tty) use is refused unless ``--yes`` is given. The shared/too-
@@ -133,9 +133,10 @@ def _live(args: argparse.Namespace) -> int:
         )
         if writable:
             ui.warn(
-                "WRITABLE mode: local edits will WRITE to the remote. Removals are "
-                "NEVER recursive, and a server-side checkpoint is taken before each "
-                "overwrite. Read-only is the default; this is OFF unless --writable."
+                "WRITABLE mode: local edits will WRITE to the remote, overwriting "
+                "files in place. Removals are NEVER recursive, but there is NO "
+                "automatic server-side undo -- make sure you have your own backup. "
+                "Read-only is the default; this is OFF unless --writable."
             )
         if not sys.stdin.isatty():
             raise SafetyError(

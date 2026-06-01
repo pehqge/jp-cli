@@ -517,9 +517,10 @@ class Api:
     def create_checkpoint(self, api_path: str) -> str:
         """POST a server-side checkpoint of a file (cheap undo before overwrite).
 
-        Research §3.6: 1 checkpoint per file (id 'checkpoint'); restore reverts. We
-        take one before every remote overwrite in writable mode so a bad write is
-        undoable on the server. Returns the checkpoint id (or '' if unavailable).
+        Research §3.6: 1 checkpoint per file (id 'checkpoint'); restore reverts.
+        NOTE: this is a building block and is NOT yet wired into the live write
+        path -- `jp live --writable` does not call it, so writable overwrites have
+        no automatic undo. Returns the checkpoint id (or '' if unavailable).
         """
         try:
             data = self._request("POST", f"api/contents/{api_path}/checkpoints")

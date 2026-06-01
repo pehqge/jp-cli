@@ -48,6 +48,18 @@ def test_dry_run_writable_flag_does_not_block(tmp_path, capsys):
     assert "writ" in out.lower()
 
 
+def test_live_writable_warning_makes_no_checkpoint_promise():
+    """Issue #4: the writable warning must NOT claim a server-side checkpoint
+    (it is never wired) and SHOULD honestly say there is no automatic undo."""
+    import inspect
+
+    src = inspect.getsource(live)
+    assert "checkpoint" not in src.lower()
+    lowered = src.lower()
+    assert "no automatic" in lowered and "undo" in lowered
+    assert "backup" in lowered
+
+
 def test_dry_run_with_mount_prints_mount_command(tmp_path, capsys):
     (tmp_path / "f.txt").write_bytes(b"hi")
     args = argparse.Namespace(dry_run=True, root=str(tmp_path), live=False, mount="/tmp/jpmnt")

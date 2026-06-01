@@ -1,3 +1,4 @@
+import glob
 import os
 
 import pytest
@@ -196,6 +197,39 @@ def test_writable_mkdir_rename_unlink_rmdir(tmp_path):
     resp, _ = a.handle(fsrpc.request(fsrpc.OP_UNLINK, rid=6, path="filled"))
     assert resp["ok"] is False and resp["code"] == fsrpc.E_ISDIR
     assert (root / "filled").is_dir()
+
+
+def test_writable_refuses_mutating_root(tmp_path):
+    """Issues #1 + #2: mutating the jail root itself is refused with EACCES, and
+    no temp file leaks into the root's PARENT (outside the jail)."""
+    root = tmp_path / "root"
+    root.mkdir()
+    (root / "real.txt").write_bytes(b"data")
+    a = agentd.Agent(str(root), writable=True)
+
+    cases = [
+        (fsrpc.request(fsrpc.OP_WRITE, rid=1, path=""), [b"x"]),
+        (fsrpc.request(fsrpc.OP_MKDIR, rid=2, path=""), None),
+        (fsrpc.request(fsrpc.OP_RMDIR, rid=3, path=""), None),
+        (fsrpc.request(fsrpc.OP_UNLINK, rid=4, path=""), None),
+        (fsrpc.request(fsrpc.OP_RENAME, rid=5, src="real.txt", dst=""), None),
+    ]
+    for req, bufs in cases:
+        resp, _ = a.handle(req, bufs)
+        assert resp["ok"] is False, req["op"]
+        assert resp["code"] == fsrpc.E_ACCES, req["op"]
+
+    # The root dir still exists and was not mutated.
+    assert root.is_dir()
+    assert (root / "real.txt").read_bytes() == b"data"
+    # No temp file was ever created in the root's PARENT (outside the jail).
+    assert glob.glob(os.path.join(str(tmp_path), ".jp-tmp*")) == []
+
+    # Reads of the root itself stay legitimate.
+    resp, _ = a.handle(fsrpc.request(fsrpc.OP_STAT, rid=6, path=""))
+    assert resp["ok"] is True and resp["type"] == "directory"
+    resp, _ = a.handle(fsrpc.request(fsrpc.OP_READDIR, rid=7, path=""))
+    assert resp["ok"] is True
 
 
 def test_rename_dst_must_be_in_jail(tmp_path):

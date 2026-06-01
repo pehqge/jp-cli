@@ -50,9 +50,9 @@ non-interactive shell it refuses to start unless you also pass `--yes`.
 - **Pre-flight confirmation.** Before any mount or write, `jp live` lists the
   top of the folder and asks you to confirm it is the folder you expect — so a
   wrong prefix is caught early.
-- **Checkpoint before overwrite.** In `--writable` mode the agent takes a
-  server-side checkpoint before overwriting a file, so the previous version is
-  recoverable.
+- **No automatic undo when writable.** In `--writable` mode the agent overwrites
+  remote files in place. There is **no automatic server-side undo** — make sure
+  you have your own backup before writing. (Removals are still never recursive.)
 - **Kernel released on exit.** The serving loop deletes the kernel in a
   `finally`, even on `Ctrl-C` or error.
 - **Token never in a URL.** Your token travels only in the `Authorization`

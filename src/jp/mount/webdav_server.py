@@ -357,7 +357,9 @@ class _DavRequestHandler(BaseHTTPRequestHandler):
             self._send_error(400, b"missing destination")
             return
         # Destination is an absolute URL or path; take the path component, decode
-        # it, and strip the leading "/" to match _resolve_path's convention.
+        # it, and strip the leading "/" to match _resolve_path's convention. We do
+        # not jail it here on purpose: the agent re-jails BOTH rename endpoints
+        # remote-side (Agent._resolve_mutable), so this is forwarded verbatim.
         dest_path = unquote(urlsplit(dest_header).path).lstrip("/")
         path = self._resolve_path()
         # Did the destination already exist? (created 201 vs overwritten 204)
