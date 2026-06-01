@@ -48,7 +48,9 @@ _EXC = {fsrpc.E_NOENT: RemoteNotFound, fsrpc.E_ACCES: RemoteAccessDenied}
 def _check(resp: dict) -> dict:
     if resp.get("ok"):
         return resp
-    raise _EXC.get(resp.get("code"), RemoteFsError)(resp.get("message", resp.get("code", "error")))
+    code = str(resp.get("code") or "")
+    message = str(resp.get("message") or code or "error")
+    raise _EXC.get(code, RemoteFsError)(message)
 
 
 class RemoteFS:
