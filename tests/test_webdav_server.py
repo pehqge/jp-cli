@@ -57,6 +57,89 @@ def _request(server, method, path, body=None, headers=None):
         conn.close()
 
 
+def _make_writable_fs(root):
+    ws = FakeKernelWS(root=str(root), writable=True)
+    ws.open_comm(comm_id="c1", target="jp.fs")
+    return RemoteFS(KernelConn(ws, comm_id="c1", session="s"))
+
+
+@pytest.fixture
+def wserver(tmp_path):
+    (tmp_path / "a.txt").write_bytes(b"hello world")
+    (tmp_path / "dir").mkdir()
+    (tmp_path / "dir" / "child.txt").write_text("c")
+
+    srv = DavServer(_make_writable_fs(tmp_path), writable=True)
+    srv.start()
+    try:
+        yield srv, tmp_path
+    finally:
+        srv.stop()
+
+
+def test_put_creates_file(wserver):
+    srv, root = wserver
+    status, _, _ = _request(srv, "PUT", "/new.txt", body=b"hello", headers={"Content-Length": "5"})
+    assert status == 201
+    assert (root / "new.txt").read_bytes() == b"hello"
+
+
+def test_put_overwrite_returns_204(wserver):
+    srv, root = wserver
+    status, _, _ = _request(srv, "PUT", "/a.txt", body=b"updated", headers={"Content-Length": "7"})
+    assert status == 204
+    assert (root / "a.txt").read_bytes() == b"updated"
+
+
+def test_mkcol_creates_dir(wserver):
+    srv, root = wserver
+    status, _, _ = _request(srv, "MKCOL", "/d")
+    assert status == 201
+    assert (root / "d").is_dir()
+
+
+def test_move_renames(wserver):
+    srv, root = wserver
+    (root / "src.txt").write_text("x")
+    status, _, _ = _request(
+        srv, "MOVE", "/src.txt", headers={"Destination": "http://127.0.0.1/b.txt"}
+    )
+    assert status in (201, 204)
+    assert not (root / "src.txt").exists()
+    assert (root / "b.txt").exists()
+
+
+def test_delete_file(wserver):
+    srv, root = wserver
+    status, _, _ = _request(srv, "DELETE", "/a.txt")
+    assert status == 204
+    assert not (root / "a.txt").exists()
+
+
+def test_delete_nonempty_dir_refused(wserver):
+    srv, root = wserver
+    status, _, body = _request(srv, "DELETE", "/dir")
+    assert status == 403
+    assert body == b"refusing recursive remote delete"
+    assert (root / "dir").is_dir()
+    assert (root / "dir" / "child.txt").exists()
+
+
+def test_readonly_server_still_forbids_put(tmp_path):
+    (tmp_path / "a.txt").write_bytes(b"hi")
+    srv = DavServer(_make_writable_fs(tmp_path))  # writable defaults False
+    srv.start()
+    try:
+        status, _, body = _request(
+            srv, "PUT", "/x.txt", body=b"data", headers={"Content-Length": "4"}
+        )
+        assert status == 403
+        assert body == b"read-only mount"
+        assert not (tmp_path / "x.txt").exists()
+    finally:
+        srv.stop()
+
+
 def test_options_advertises_dav(server):
     status, headers, _ = _request(server, "OPTIONS", "/")
     assert status == 200

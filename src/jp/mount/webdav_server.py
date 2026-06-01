@@ -1,14 +1,17 @@
-"""A strictly read-only WebDAV server backed by a RemoteFS-like object.
+"""A WebDAV server backed by a RemoteFS-like object (read-only by default).
 
 This exposes the remote filesystem (any object with the
 :class:`jp.remote_fs.RemoteFS` surface) over loopback HTTP so the OS's built-in
 WebDAV client can mount it natively from ``127.0.0.1`` -- no FUSE, no third-party
 deps, stdlib only.
 
-Safety Charter, Phase 2: a mount can NEVER alter the remote. Every mutating
-WebDAV method (PUT/DELETE/MKCOL/MOVE/COPY/PROPPATCH/LOCK/UNLOCK) is refused with
-HTTP 403. Only OPTIONS/GET/HEAD/PROPFIND are honored. The agent's jail (enforced
-remote-side) is forwarded verbatim; this server never resolves paths itself.
+Safety Charter: a mount is READ-ONLY by default. Every mutating WebDAV method
+(PUT/DELETE/MKCOL/MOVE/COPY/PROPPATCH/LOCK/UNLOCK) is refused with HTTP 403
+unless the server was constructed with ``writable=True`` (Phase 4 guarded write
+path). Even when writable, COPY/PROPPATCH/LOCK/UNLOCK stay 403 (out of scope),
+and a DELETE of a non-empty directory is refused: this server NEVER
+recursive-deletes the remote. The agent's jail (enforced remote-side) is
+forwarded verbatim; this server never resolves paths itself.
 """
 
 from __future__ import annotations
@@ -20,10 +23,19 @@ from typing import Any
 from urllib.parse import quote, unquote, urlsplit
 from xml.sax.saxutils import escape
 
-from ..remote_fs import RemoteAccessDenied, RemoteNotFound
+from ..remote_fs import (
+    RemoteAccessDenied,
+    RemoteExists,
+    RemoteNotEmpty,
+    RemoteNotFound,
+    RemoteReadOnly,
+)
 
-# Verbs that could mutate the remote. All refused 403, unconditionally.
+# Verbs that could mutate the remote. PUT/DELETE/MKCOL/MOVE are honored only in
+# writable mode; the rest stay refused 403 even when writable (out of scope).
 _MUTATING = ("PUT", "DELETE", "MKCOL", "MOVE", "COPY", "PROPPATCH", "LOCK", "UNLOCK")
+# Verbs that remain 403 in BOTH modes (writable does not enable these).
+_ALWAYS_FORBIDDEN = ("COPY", "PROPPATCH", "LOCK", "UNLOCK")
 
 
 class _DavRequestHandler(BaseHTTPRequestHandler):
@@ -41,6 +53,10 @@ class _DavRequestHandler(BaseHTTPRequestHandler):
     @property
     def _fs(self) -> Any:
         return self.server.fs  # type: ignore[attr-defined]
+
+    @property
+    def _writable(self) -> bool:
+        return bool(getattr(self.server, "writable", False))
 
     def log_message(self, *args: Any) -> None:  # silence stderr access logs
         return
@@ -230,6 +246,144 @@ class _DavRequestHandler(BaseHTTPRequestHandler):
     def do_HEAD(self) -> None:
         self._serve_get(head_only=True)
 
+    # --- mutating verbs (only honored in writable mode) ----------------
+
+    def do_PUT(self) -> None:
+        if not self._writable:
+            self._forbidden()
+            return
+        clen = self.headers.get("Content-Length")
+        if clen is None:
+            # We refuse to guess the body length: reading to EOF is unsafe on a
+            # persistent (keep-alive) connection. Require an explicit length.
+            self._send_error(411, b"length required")
+            return
+        try:
+            length = int(clen)
+        except ValueError:
+            self._send_error(400, b"bad content-length")
+            return
+        body = self.rfile.read(length) if length > 0 else b""
+
+        path = self._resolve_path()
+        # Decide created (201) vs updated (204) by probing existence first.
+        try:
+            self._fs.stat(path)
+            existed = True
+        except RemoteNotFound:
+            existed = False
+        except RemoteAccessDenied:
+            self._forbidden()
+            return
+
+        try:
+            self._fs.write(path, body)
+        except RemoteReadOnly:
+            self._forbidden()
+            return
+        except RemoteAccessDenied:
+            self._forbidden()
+            return
+        except RemoteNotFound:
+            # Parent directory missing -> conflict per WebDAV.
+            self._send_error(409, b"conflict")
+            return
+        self._send_error(204 if existed else 201)
+
+    def do_DELETE(self) -> None:
+        if not self._writable:
+            self._forbidden()
+            return
+        path = self._resolve_path()
+        try:
+            st = self._fs.stat(path)
+        except RemoteNotFound:
+            self._send_error(404, b"not found")
+            return
+        except RemoteAccessDenied:
+            self._forbidden()
+            return
+
+        try:
+            if st.type == "directory":
+                # SAFETY: we never recursively delete the remote. rmdir only
+                # succeeds on an empty directory; a non-empty one is refused.
+                try:
+                    self._fs.rmdir(path)
+                except RemoteNotEmpty:
+                    self._send_error(403, b"refusing recursive remote delete")
+                    return
+            else:
+                self._fs.unlink(path)
+        except RemoteReadOnly:
+            self._forbidden()
+            return
+        except RemoteAccessDenied:
+            self._forbidden()
+            return
+        except RemoteNotFound:
+            self._send_error(404, b"not found")
+            return
+        self._send_error(204)
+
+    def do_MKCOL(self) -> None:
+        if not self._writable:
+            self._forbidden()
+            return
+        path = self._resolve_path()
+        try:
+            self._fs.mkdir(path)
+        except RemoteExists:
+            # MKCOL on an existing resource -> Method Not Allowed (RFC 4918).
+            self._send_error(405, b"already exists")
+            return
+        except RemoteReadOnly:
+            self._forbidden()
+            return
+        except RemoteAccessDenied:
+            self._forbidden()
+            return
+        except RemoteNotFound:
+            self._send_error(409, b"conflict")
+            return
+        self._send_error(201)
+
+    def do_MOVE(self) -> None:
+        if not self._writable:
+            self._forbidden()
+            return
+        dest_header = self.headers.get("Destination")
+        if not dest_header:
+            self._send_error(400, b"missing destination")
+            return
+        # Destination is an absolute URL or path; take the path component, decode
+        # it, and strip the leading "/" to match _resolve_path's convention.
+        dest_path = unquote(urlsplit(dest_header).path).lstrip("/")
+        path = self._resolve_path()
+        # Did the destination already exist? (created 201 vs overwritten 204)
+        try:
+            self._fs.stat(dest_path)
+            dest_existed = True
+        except (RemoteNotFound, RemoteAccessDenied):
+            dest_existed = False
+
+        try:
+            self._fs.rename(path, dest_path)
+        except RemoteReadOnly:
+            self._forbidden()
+            return
+        except RemoteAccessDenied:
+            self._forbidden()
+            return
+        except RemoteNotFound:
+            self._send_error(404, b"not found")
+            return
+        except RemoteExists:
+            # Overwrite refused by the remote -> Precondition Failed (WebDAV).
+            self._send_error(412, b"destination exists")
+            return
+        self._send_error(204 if dest_existed else 201)
+
 
 def _make_mutating_handler(method: str) -> Any:
     def handler(self: _DavRequestHandler) -> None:
@@ -239,7 +393,9 @@ def _make_mutating_handler(method: str) -> Any:
     return handler
 
 
-for _m in _MUTATING:
+# COPY/PROPPATCH/LOCK/UNLOCK are always 403 (even in writable mode). PUT/DELETE/
+# MKCOL/MOVE have explicit handlers above that gate on ``self._writable``.
+for _m in _ALWAYS_FORBIDDEN:
     setattr(_DavRequestHandler, f"do_{_m}", _make_mutating_handler(_m))
 
 
@@ -247,23 +403,29 @@ class _DavHTTPServer(ThreadingHTTPServer):
     daemon_threads = True
     allow_reuse_address = True
 
-    def __init__(self, address: tuple[str, int], fs: Any) -> None:
+    def __init__(self, address: tuple[str, int], fs: Any, writable: bool = False) -> None:
         super().__init__(address, _DavRequestHandler)
         self.fs = fs
+        self.writable = writable
 
 
 class DavServer:
-    """Read-only WebDAV server over a RemoteFS-like ``fs``, bound to loopback."""
+    """WebDAV server over a RemoteFS-like ``fs``, bound to loopback.
 
-    def __init__(self, fs: Any) -> None:
+    Read-only by default. Pass ``writable=True`` to enable the guarded write
+    path (PUT/DELETE/MKCOL/MOVE); see the module docstring for the safety rules.
+    """
+
+    def __init__(self, fs: Any, *, writable: bool = False) -> None:
         self._fs = fs
+        self.writable = writable
         self._httpd: _DavHTTPServer | None = None
         self._thread: threading.Thread | None = None
 
     def start(self) -> DavServer:
         if self._httpd is not None:
             return self
-        self._httpd = _DavHTTPServer(("127.0.0.1", 0), self._fs)
+        self._httpd = _DavHTTPServer(("127.0.0.1", 0), self._fs, self.writable)
         self._thread = threading.Thread(
             target=self._httpd.serve_forever, name="jp-dav", daemon=True
         )

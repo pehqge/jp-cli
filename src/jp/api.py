@@ -486,6 +486,21 @@ class Api:
                 ) from exc
             raise
 
+    def create_checkpoint(self, api_path: str) -> str:
+        """POST a server-side checkpoint of a file (cheap undo before overwrite).
+
+        Research §3.6: 1 checkpoint per file (id 'checkpoint'); restore reverts. We
+        take one before every remote overwrite in writable mode so a bad write is
+        undoable on the server. Returns the checkpoint id (or '' if unavailable).
+        """
+        try:
+            data = self._request("POST", f"api/contents/{api_path}/checkpoints")
+        except ApiError:
+            return ""
+        if isinstance(data, dict) and data.get("id"):
+            return str(data["id"])
+        return ""
+
     # --- health probe -------------------------------------------------------
     def status_probe(self) -> StatusResult:
         """Probe ``GET /api/status`` WITHOUT following redirects.

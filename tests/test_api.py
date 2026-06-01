@@ -404,6 +404,37 @@ def test_terminal_ws_url_derivation():
 
 
 # --------------------------------------------------------------------------- #
+# create_checkpoint: cheap server-side undo before a remote overwrite
+# --------------------------------------------------------------------------- #
+def test_create_checkpoint_posts_and_returns_id(monkeypatch):
+    api = _api()
+    captured = {}
+
+    def fake_urlopen(req, timeout=None, context=None):
+        captured["method"] = req.get_method()
+        captured["url"] = req.full_url
+        return _FakeResp(json.dumps({"id": "checkpoint", "last_modified": "now"}).encode())
+
+    monkeypatch.setattr(urllib.request, "urlopen", fake_urlopen)
+    cid = api.create_checkpoint("users/alice/hello.txt")
+    assert cid == "checkpoint"
+    assert captured["method"] == "POST"
+    assert captured["url"].endswith("/api/contents/users/alice/hello.txt/checkpoints")
+
+
+def test_create_checkpoint_returns_empty_when_unavailable(monkeypatch):
+    api = _api()
+
+    def fake_urlopen(req, timeout=None, context=None):
+        raise urllib.error.HTTPError(
+            req.full_url, 500, "Server Error", {}, io.BytesIO(b"no checkpoints")
+        )
+
+    monkeypatch.setattr(urllib.request, "urlopen", fake_urlopen)
+    assert api.create_checkpoint("users/alice/hello.txt") == ""
+
+
+# --------------------------------------------------------------------------- #
 # kernels: ephemeral compute sessions (POST/DELETE/GET /api/kernels)
 # --------------------------------------------------------------------------- #
 def test_kernel_ws_url_uses_wss_and_api_path():

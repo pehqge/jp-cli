@@ -37,6 +37,16 @@ def test_dry_run_stats_prints_machine(tmp_path, capsys):
     assert "CPU" in out or "cpu" in out
 
 
+def test_dry_run_writable_flag_does_not_block(tmp_path, capsys):
+    (tmp_path / "f.txt").write_bytes(b"hi")
+    args = argparse.Namespace(dry_run=True, root=str(tmp_path), live=False, writable=True)
+    rc = live.run(args)
+    out = capsys.readouterr().out
+    assert rc == EXIT_OK
+    # Warns that writes will reach the (simulated) remote, and does NOT block.
+    assert "writ" in out.lower()
+
+
 def test_dry_run_with_mount_prints_mount_command(tmp_path, capsys):
     (tmp_path / "f.txt").write_bytes(b"hi")
     args = argparse.Namespace(dry_run=True, root=str(tmp_path), live=False, mount="/tmp/jpmnt")

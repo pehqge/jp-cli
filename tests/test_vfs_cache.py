@@ -203,3 +203,36 @@ def test_invalidate_drops_caches():
     n_before = len(backend.read_calls)
     fs.read("/f", 0, 100)
     assert len(backend.read_calls) > n_before
+
+
+class WritableCountingFS(CountingFS):
+    """CountingFS plus the mutating surface, recording writes."""
+
+    def __init__(self, files):
+        super().__init__(files)
+        self.writes = []  # list of (path, bytes)
+
+    def write(self, path, data):
+        self.writes.append((path, data))
+        self.files[path] = bytes(data)
+        self.mtimes[path] = self.mtimes.get(path, 1.0) + 1.0
+        return len(data)
+
+
+def test_write_through_invalidates():
+    backend = WritableCountingFS({"/f": b"old-bytes"})
+    fs = CachingFS(backend, time_fn=FakeClock())
+
+    # Read once to populate the block cache.
+    assert fs.read("/f", 0, 9) == b"old-bytes"
+    reads_before = len(backend.read_calls)
+
+    # Write new bytes through the cache.
+    fs.write("/f", b"new!")
+    assert backend.writes == [("/f", b"new!")]
+    assert backend.files["/f"] == b"new!"
+
+    # A subsequent read must return the NEW bytes (cache was invalidated),
+    # which forces a fresh backend read.
+    assert fs.read("/f", 0, 4) == b"new!"
+    assert len(backend.read_calls) > reads_before

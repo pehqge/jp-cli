@@ -40,6 +40,14 @@ def add_parser(subparsers: argparse._SubParsersAction) -> None:
             "native-mount command for POINT"
         ),
     )
+    p.add_argument(
+        "--writable",
+        action="store_true",
+        help=(
+            "(with --dry-run) allow writes through the mount to reach the "
+            "(simulated) remote. OFF by default; read-only is always the default."
+        ),
+    )
     p.set_defaults(func=run)
 
 
@@ -53,10 +61,16 @@ def run(args: argparse.Namespace) -> int:
         args.root,
         getattr(args, "mount", None),
         show_stats=getattr(args, "stats", False),
+        writable=getattr(args, "writable", False),
     )
 
 
-def _dry_run(root: str | None, mountpoint: str | None = None, show_stats: bool = False) -> int:
+def _dry_run(
+    root: str | None,
+    mountpoint: str | None = None,
+    show_stats: bool = False,
+    writable: bool = False,
+) -> int:
     if not root:
         raise SafetyError("--dry-run requires --root <folder>")
 
@@ -65,9 +79,23 @@ def _dry_run(root: str | None, mountpoint: str | None = None, show_stats: bool =
     from ..kernel_conn import KernelConn
     from ..remote_fs import RemoteFS
 
-    ws = FakeKernelWS(root=root)
+    ws = FakeKernelWS(root=root, writable=writable)
     ws.open_comm(comm_id="c1", target="jp.fs")
     rfs = RemoteFS(KernelConn(ws, comm_id="c1", session="dryrun"))
+
+    if writable:
+        warning = (
+            "WRITABLE mode: writes through this mount WILL reach the (simulated) "
+            "remote -- creating, overwriting, renaming and deleting files. "
+            "Read-only is the default; this is OFF unless --writable is given."
+        )
+        ui.out("!!! " + warning)
+        ui.warn(warning)
+        if sys.stdin.isatty():
+            ui.out("Type 'yes' to proceed with a writable dry-run mount: ")
+            if input().strip().lower() not in ("y", "yes"):
+                ui.out("aborted (writable mount not confirmed)")
+                return EXIT_OK
 
     ui.heading("jp live --dry-run (transport self-test, no network)")
     ui.out(f"ping: {'ok' if rfs.ping() else 'FAILED'}")
@@ -89,7 +117,7 @@ def _dry_run(root: str | None, mountpoint: str | None = None, show_stats: bool =
         from ..mount.os_mount import build_mount_plan, build_unmount_plan
         from ..mount.webdav_server import DavServer
 
-        srv = DavServer(rfs).start()
+        srv = DavServer(rfs, writable=writable).start()
         try:
             url = srv.url
             plan = build_mount_plan(url, mountpoint, sys.platform)

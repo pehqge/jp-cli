@@ -239,6 +239,34 @@ class CachingFS:
             for mk in [mk for mk in m if mk == path or mk.startswith(prefix)]:
                 m.pop(mk, None)
 
+    # -- write-through surface -------------------------------------------
+    #
+    # Each op forwards to the backend first (so backend exceptions propagate
+    # unchanged and no cache state is touched on failure), then invalidates the
+    # affected entries so a subsequent read/stat observes the new remote state.
+
+    def write(self, path: str, data) -> int:
+        result = self._fs.write(path, data)
+        self.invalidate(path)
+        return result
+
+    def mkdir(self, path: str) -> None:
+        self._fs.mkdir(path)
+        self.invalidate(path)
+
+    def rename(self, src: str, dst: str) -> None:
+        self._fs.rename(src, dst)
+        self.invalidate(src)
+        self.invalidate(dst)
+
+    def unlink(self, path: str) -> None:
+        self._fs.unlink(path)
+        self.invalidate(path)
+
+    def rmdir(self, path: str) -> None:
+        self._fs.rmdir(path)
+        self.invalidate(path)
+
     def ping(self) -> bool:
         return self._fs.ping()
 
