@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import threading
 
 import pytest
 
@@ -217,6 +218,114 @@ class WritableCountingFS(CountingFS):
         self.files[path] = bytes(data)
         self.mtimes[path] = self.mtimes.get(path, 1.0) + 1.0
         return len(data)
+
+
+class ThreadSafeCountingFS:
+    """Backend whose own bookkeeping is locked, so the test isolates the
+    cache's locking rather than racing the backend's counters.
+
+    ``read``/``stat`` are deterministic and depend only on their arguments, so
+    any correct return value is independent of concurrency -- the cache is the
+    only place where shared mutable state could be corrupted.
+    """
+
+    def __init__(self, files):
+        self.files = dict(files)
+        self.mtimes = dict.fromkeys(files, 1.0)
+        self._lock = threading.Lock()
+        self.read_calls = 0
+        self.stat_calls = 0
+
+    def ping(self):
+        return True
+
+    def stat(self, path):
+        with self._lock:
+            self.stat_calls += 1
+        if path in self.files:
+            return Stat(type="file", size=len(self.files[path]), mtime=self.mtimes[path])
+        raise RemoteNotFound(path)
+
+    def listdir(self, path):
+        return []
+
+    def read(self, path, off, length):
+        with self._lock:
+            self.read_calls += 1
+        if path not in self.files:
+            raise RemoteNotFound(path)
+        return self.files[path][off : off + length]
+
+
+def test_concurrent_reads_threadsafe():
+    n_files = 6
+    files = {}
+    for i in range(n_files):
+        files[f"/f{i}"] = os.urandom(BLOCK * 3 + 17 * (i + 1))
+    backend = ThreadSafeCountingFS(files)
+    # A cache far smaller than the working set forces constant LRU eviction and
+    # block-dropping, so the eviction/drop loops (which iterate the block dict)
+    # run concurrently with inserts -- the classic "dict mutated during
+    # iteration" / lost-byte-counter corruption the cache lock must prevent.
+    fs = CachingFS(backend, max_bytes=BLOCK * 4, time_fn=FakeClock())
+
+    n_threads = 16
+    iters = 60
+    barrier = threading.Barrier(n_threads)
+    errors: list[Exception] = []
+    errors_lock = threading.Lock()
+
+    def worker(tid: int) -> None:
+        import random
+
+        rng = random.Random(tid)
+        try:
+            barrier.wait()
+            for _ in range(iters):
+                # Mix of distinct and overlapping ranges across all files.
+                name = f"/f{rng.randint(0, n_files - 1)}"
+                data = files[name]
+                off = rng.randint(0, len(data))
+                length = rng.randint(0, len(data) - off + 50)
+                got = fs.read(name, off, length)
+                assert got == data[off : off + length], (name, off, length)
+                if rng.random() < 0.2:
+                    st = fs.stat(name)
+                    assert st.size == len(data)
+                if rng.random() < 0.1:
+                    # Concurrent invalidate iterates+mutates the block/attr dicts.
+                    fs.invalidate(name)
+        except Exception as exc:  # noqa: BLE001
+            with errors_lock:
+                errors.append(exc)
+
+    threads = [threading.Thread(target=worker, args=(t,)) for t in range(n_threads)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+
+    assert not errors, errors[:5]
+
+    # Metrics must be internally consistent and non-negative after the storm.
+    m = fs.metrics
+    for field in (
+        m.block_hits,
+        m.block_misses,
+        m.backend_reads,
+        m.bytes_from_cache,
+        m.bytes_from_backend,
+        m.prefetches,
+        m.stat_hits,
+        m.stat_misses,
+    ):
+        assert field >= 0, m
+    # Every distinct block touched produced at least one miss; total accesses
+    # account for both hits and misses with no lost counts corrupting the sum.
+    assert m.block_hits + m.block_misses >= m.block_misses >= 1
+    # Cached-byte bookkeeping never goes negative and respects the cap.
+    assert fs._cached_bytes >= 0
+    assert fs._cached_bytes <= fs._max_bytes
 
 
 def test_write_through_invalidates():

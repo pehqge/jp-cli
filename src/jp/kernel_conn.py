@@ -19,6 +19,7 @@ than guess. Without a factory the behaviour is unchanged (raises
 from __future__ import annotations
 
 import json
+import threading
 import time
 from collections.abc import Callable
 from typing import Any
@@ -62,6 +63,14 @@ class KernelConn:
         self._poll_interval = poll_interval
         self._rid = 0
         self._pending: dict[int, tuple[dict, list[bytes]]] = {}
+        # One KernelConn is shared by every WebDAV worker thread (the server is
+        # a ThreadingHTTPServer) AND the live keepalive loop. They all funnel
+        # through a SINGLE underlying SSL socket. Concurrent read/write on one
+        # OpenSSL socket from multiple threads is undefined behaviour and
+        # segfaults CPython; it also races _rid/_pending. This lock serializes
+        # the ENTIRE request/reply cycle so exactly one thread touches the
+        # socket (and the shared rid/pending state) at a time.
+        self._lock = threading.Lock()
 
     def call(
         self,
@@ -71,27 +80,32 @@ class KernelConn:
         buffers: list[bytes] | None = None,
         **fields: Any,
     ) -> tuple[dict, list[bytes]]:
-        self._rid += 1
-        rid = self._rid
+        # Serialize the whole cycle: only one thread may hold the socket (and
+        # mutate _rid/_pending) at a time. keepalive() reaches call() WITHOUT
+        # holding the lock, so it is serialized here too -- no double-locking,
+        # no deadlock; the lock is taken once and released on return/raise.
+        with self._lock:
+            self._rid += 1
+            rid = self._rid
 
-        attempts = 0
-        while True:
-            try:
-                return self._attempt(rid, op, _max_polls=_max_polls, buffers=buffers, **fields)
-            except (RpcTimeout, OSError, WebSocketError) as exc:
-                # A bare RpcTimeout with no reconnect factory is the legacy
-                # behaviour -- propagate it unchanged.
-                if self._reconnect is None:
-                    if isinstance(exc, RpcTimeout):
-                        raise
-                    raise RpcTimeout(str(exc)) from exc
-                if attempts >= self._max_reconnects:
-                    raise ConnectionLost(
-                        f"kernel connection lost after {attempts} reconnect attempt(s) "
-                        f"(rid={rid} op={op})"
-                    ) from exc
-                attempts += 1
-                self._do_reconnect(attempts)
+            attempts = 0
+            while True:
+                try:
+                    return self._attempt(rid, op, _max_polls=_max_polls, buffers=buffers, **fields)
+                except (RpcTimeout, OSError, WebSocketError) as exc:
+                    # A bare RpcTimeout with no reconnect factory is the legacy
+                    # behaviour -- propagate it unchanged.
+                    if self._reconnect is None:
+                        if isinstance(exc, RpcTimeout):
+                            raise
+                        raise RpcTimeout(str(exc)) from exc
+                    if attempts >= self._max_reconnects:
+                        raise ConnectionLost(
+                            f"kernel connection lost after {attempts} reconnect attempt(s) "
+                            f"(rid={rid} op={op})"
+                        ) from exc
+                    attempts += 1
+                    self._do_reconnect(attempts)
 
     def _attempt(
         self,

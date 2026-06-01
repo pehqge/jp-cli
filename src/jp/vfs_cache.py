@@ -19,6 +19,7 @@ WebDAV server.
 from __future__ import annotations
 
 import contextlib
+import threading
 import time
 from collections import OrderedDict
 from dataclasses import dataclass
@@ -83,6 +84,16 @@ class CachingFS:
 
         self.metrics = CacheMetrics()
 
+        # The WebDAV server is a ThreadingHTTPServer, so every cache method may
+        # run concurrently. A single re-entrant lock guards ALL cache-state
+        # mutation (block dict + LRU, attr/dir/negative caches, metrics, the
+        # byte counter) so the bookkeeping can never be corrupted (e.g. a dict
+        # mutated mid-iteration in _evict/_drop_path_blocks, or a lost
+        # _cached_bytes update). RLock so the write-through ops can call
+        # invalidate() while already holding it. Correctness over parallelism:
+        # the (already-serialized) backend RPC happens inside the lock.
+        self._lock = threading.RLock()
+
     # -- internal block helpers ------------------------------------------
 
     def _drop_path_blocks(self, path: str) -> None:
@@ -129,6 +140,10 @@ class CachingFS:
         if length <= 0:
             return b""
 
+        with self._lock:
+            return self._read_locked(path, offset, length)
+
+    def _read_locked(self, path: str, offset: int, length: int) -> bytes:
         # Establish a baseline mtime stamp for this path the first time we cache
         # any of its blocks, so a later stat() that sees a different mtime can
         # invalidate them. Prefer an already-cached attr to avoid a round-trip;
@@ -189,42 +204,48 @@ class CachingFS:
         return bytes(out)
 
     def stat(self, path: str) -> Stat:
-        now = self._time()
-        entry = self._attr.get(path)
-        if entry is not None and entry[1] > now:
-            self.metrics.stat_hits += 1
-            st = entry[0]
-            if st is None:
-                raise RemoteNotFound(path)
+        with self._lock:
+            now = self._time()
+            entry = self._attr.get(path)
+            if entry is not None and entry[1] > now:
+                self.metrics.stat_hits += 1
+                st = entry[0]
+                if st is None:
+                    raise RemoteNotFound(path)
+                return st
+
+            self.metrics.stat_misses += 1
+            try:
+                st = self._fs.stat(path)
+            except RemoteNotFound:
+                self._attr[path] = (None, now + self._attr_ttl)
+                raise
+
+            # If mtime changed for a file we have cached blocks for, invalidate.
+            old = self._block_mtime.get(path)
+            if old is not None and old != st.mtime:
+                self._drop_path_blocks(path)
+            self._block_mtime[path] = st.mtime
+
+            self._attr[path] = (st, now + self._attr_ttl)
             return st
 
-        self.metrics.stat_misses += 1
-        try:
-            st = self._fs.stat(path)
-        except RemoteNotFound:
-            self._attr[path] = (None, now + self._attr_ttl)
-            raise
-
-        # If mtime changed for a file we have cached blocks for, invalidate them.
-        old = self._block_mtime.get(path)
-        if old is not None and old != st.mtime:
-            self._drop_path_blocks(path)
-        self._block_mtime[path] = st.mtime
-
-        self._attr[path] = (st, now + self._attr_ttl)
-        return st
-
     def listdir(self, path: str) -> list:
-        now = self._time()
-        entry = self._dirs.get(path)
-        if entry is not None and entry[1] > now:
-            return entry[0]
-        entries = self._fs.listdir(path)
-        self._dirs[path] = (entries, now + self._attr_ttl)
-        return entries
+        with self._lock:
+            now = self._time()
+            entry = self._dirs.get(path)
+            if entry is not None and entry[1] > now:
+                return entry[0]
+            entries = self._fs.listdir(path)
+            self._dirs[path] = (entries, now + self._attr_ttl)
+            return entries
 
     def invalidate(self, path: str) -> None:
         """Drop all cached state for ``path`` (and, if a dir, its children)."""
+        with self._lock:
+            self._invalidate_locked(path)
+
+    def _invalidate_locked(self, path: str) -> None:
         self._drop_path_blocks(path)
         self._attr.pop(path, None)
         self._dirs.pop(path, None)
@@ -246,26 +267,31 @@ class CachingFS:
     # affected entries so a subsequent read/stat observes the new remote state.
 
     def write(self, path: str, data) -> int:
-        result = self._fs.write(path, data)
-        self.invalidate(path)
-        return result
+        with self._lock:
+            result = self._fs.write(path, data)
+            self._invalidate_locked(path)
+            return result
 
     def mkdir(self, path: str) -> None:
-        self._fs.mkdir(path)
-        self.invalidate(path)
+        with self._lock:
+            self._fs.mkdir(path)
+            self._invalidate_locked(path)
 
     def rename(self, src: str, dst: str) -> None:
-        self._fs.rename(src, dst)
-        self.invalidate(src)
-        self.invalidate(dst)
+        with self._lock:
+            self._fs.rename(src, dst)
+            self._invalidate_locked(src)
+            self._invalidate_locked(dst)
 
     def unlink(self, path: str) -> None:
-        self._fs.unlink(path)
-        self.invalidate(path)
+        with self._lock:
+            self._fs.unlink(path)
+            self._invalidate_locked(path)
 
     def rmdir(self, path: str) -> None:
-        self._fs.rmdir(path)
-        self.invalidate(path)
+        with self._lock:
+            self._fs.rmdir(path)
+            self._invalidate_locked(path)
 
     def ping(self) -> bool:
         return self._fs.ping()
