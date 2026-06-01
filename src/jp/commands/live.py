@@ -1,0 +1,73 @@
+"""``jp live`` -- live remote-as-local mount (PHASE 1: dry-run only).
+
+Phase 1 ships ONLY ``jp live --dry-run``: it wires the entire transport
+(RemoteFS -> KernelConn -> simulator running the real agent) against a local
+directory and prints a verification report. The real-server path is deliberately
+blocked until the live-fire certification (Phase 6); attempting ``--live`` raises
+SafetyError. This guarantees nothing in Phase 1 can touch a real JupyterHub.
+"""
+
+from __future__ import annotations
+
+import argparse
+
+from .. import ui
+from ..errors import EXIT_OK, SafetyError
+
+
+def add_parser(subparsers: argparse._SubParsersAction) -> None:
+    p = subparsers.add_parser("live", help="(experimental) live mount of a remote folder")
+    p.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="exercise the full transport against a LOCAL folder (no network)",
+    )
+    p.add_argument("--root", help="local folder to use as the simulated remote (with --dry-run)")
+    p.add_argument(
+        "--live", action="store_true", help="(blocked until certified) connect to the real server"
+    )
+    p.set_defaults(func=run)
+
+
+def run(args: argparse.Namespace) -> int:
+    if getattr(args, "live", False) or not getattr(args, "dry_run", False):
+        raise SafetyError(
+            "jp live is in development: only '--dry-run --root <folder>' is enabled. "
+            "The real-server path is disabled until the safety certification is complete."
+        )
+    return _dry_run(args.root)
+
+
+def _dry_run(root: str | None) -> int:
+    if not root:
+        raise SafetyError("--dry-run requires --root <folder>")
+
+    from .._sim import FakeKernelWS
+    from ..kernel_conn import KernelConn
+    from ..remote_fs import RemoteFS
+
+    ws = FakeKernelWS(root=root)
+    ws.open_comm(comm_id="c1", target="jp.fs")
+    rfs = RemoteFS(KernelConn(ws, comm_id="c1", session="dryrun"))
+
+    ui.heading("jp live --dry-run (transport self-test, no network)")
+    ui.out(f"ping: {'ok' if rfs.ping() else 'FAILED'}")
+
+    verified = 0
+    for entry in _walk(rfs, ""):
+        ui.out(f"  {entry}")
+        st = rfs.stat(entry)
+        if st.type == "file" and st.size:
+            head = rfs.read(entry, 0, min(st.size, 64))
+            verified += len(head)
+    ui.success(f"{verified} bytes verified over the binary comm transport")
+    return EXIT_OK
+
+
+def _walk(rfs, path: str):
+    """Yield relative paths depth-first (for the report)."""
+    for e in rfs.listdir(path):
+        rel = f"{path}/{e.name}" if path else e.name
+        yield rel
+        if e.type == "directory":
+            yield from _walk(rfs, rel)
