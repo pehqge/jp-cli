@@ -1,6 +1,6 @@
 from jp import fsrpc
 from jp import kernel_proto as kp
-from tests.fake_jupyter import FakeKernelWS
+from jp._sim import FakeKernelWS
 
 
 def test_fake_ws_roundtrips_a_comm_msg_through_the_real_agent(tmp_path):

@@ -4,14 +4,18 @@ The whole jp-live stack is exercised against this. The kernel/comm path is NOT
 mocked at the dict level -- it runs the REAL agent (jp._agent.agentd.Agent)
 against a temp directory, so the agent's logic and the binary framing are tested
 end to end without touching any real server (Safety Charter rule 1).
+
+This lives in the shipped package (not under tests/) so that `jp live --dry-run`
+can import it as a self-test without depending on the test tree. It performs no
+I/O of its own beyond the agent's reads under the given root.
 """
 
 from __future__ import annotations
 
 import json
 
-from jp import kernel_proto as kp
-from jp._agent.agentd import Agent
+from . import kernel_proto as kp
+from ._agent.agentd import Agent
 
 
 class FakeKernelWS:
@@ -29,14 +33,12 @@ class FakeKernelWS:
         self._outbox: list[bytes] = []
         self.closed = False
 
-    # test/bootstrap helper -- equivalent to the agent registering its target
     def open_comm(self, *, comm_id: str, target: str) -> None:
         assert target == "jp.fs"
         self._comm_ids.add(comm_id)
 
-    # client -> server
     def send_binary(self, blob: bytes) -> None:
-        channel, blobs = kp.unpack_ws_v1(blob)
+        _channel, blobs = kp.unpack_ws_v1(blob)
         content = json.loads(blobs[3])
         comm_id = content.get("comm_id")
         if comm_id not in self._comm_ids:
@@ -51,7 +53,6 @@ class FakeKernelWS:
     def send_text(self, text: str) -> None:  # bootstrap execute_request: no-op reply
         self._outbox.append(b"")
 
-    # server -> client
     def read_messages(self) -> list[bytes]:
         out = [m for m in self._outbox if m]
         self._outbox.clear()
