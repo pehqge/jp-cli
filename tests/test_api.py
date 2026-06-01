@@ -401,3 +401,44 @@ def test_terminal_ws_url_derivation():
     # so the constructor's cleartext-credential guard is satisfied with "".)
     plain = Api("http://localhost:8888/api", "")
     assert plain.terminal_ws_url("ab") == "ws://localhost:8888/terminals/websocket/ab"
+
+
+# --------------------------------------------------------------------------- #
+# kernels: ephemeral compute sessions (POST/DELETE/GET /api/kernels)
+# --------------------------------------------------------------------------- #
+def test_kernel_ws_url_strips_api_and_uses_wss():
+    api = Api("https://hub.example/user/alice/api", token="t")
+    url = api.kernel_ws_url("KID")
+    assert url == "wss://hub.example/user/alice/api/kernels/KID/channels"
+    assert "token" not in url  # never in the URL
+
+
+def test_create_kernel_posts_and_returns_id(monkeypatch):
+    import jp.api as apimod
+
+    class _Resp:
+        status = 201
+        headers = {"Content-Type": "application/json"}
+
+        def read(self):
+            return b'{"id":"KID","name":"python3"}'
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+    seen = {}
+
+    def fake_urlopen(req, timeout=None, context=None):
+        seen["method"] = req.get_method()
+        seen["url"] = req.full_url
+        return _Resp()
+
+    monkeypatch.setattr(apimod.urllib.request, "urlopen", fake_urlopen)
+
+    api = Api("https://hub.example/user/alice/api", token="t")
+    assert api.create_kernel() == "KID"
+    assert seen["method"] == "POST"
+    assert seen["url"].endswith("/api/kernels")

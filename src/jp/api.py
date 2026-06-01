@@ -594,6 +594,53 @@ class Api:
             return str(data["name"])
         raise ApiError("server did not return a terminal name")
 
+    # --- kernels (ephemeral compute; used by `jp live`) ---------------------
+    def create_kernel(self, name: str = "python3") -> str:
+        """Start a kernel via ``POST /api/kernels``; return its id.
+
+        Like terminals, a kernel is not a path -- the path-jail does not apply
+        to its lifecycle. jp tracks the returned id and deletes ONLY that id.
+        """
+        data = self._request("POST", "api/kernels", body={"name": name})
+        if isinstance(data, dict) and data.get("id"):
+            return str(data["id"])
+        raise ApiError("server did not return a kernel id")
+
+    def kernel_alive(self, kernel_id: str) -> bool:
+        """True if ``GET /api/kernels/<id>`` is 200; False on 404."""
+        try:
+            self._request("GET", f"api/kernels/{kernel_id}")
+            return True
+        except ApiError as exc:
+            if exc.status == 404:
+                return False
+            raise
+
+    def delete_kernel(self, kernel_id: str) -> None:
+        """Delete a kernel by id (idempotent: 404 tolerated). Frees the GPU."""
+        try:
+            self._request("DELETE", f"api/kernels/{kernel_id}")
+        except ApiError as exc:
+            if exc.status == 404:
+                return
+            raise
+
+    def kernel_ws_url(self, kernel_id: str) -> str:
+        """Derive ``wss://.../kernels/<id>/channels``. Token never in URL.
+
+        ``base_url`` already includes the api root (e.g. ``/api``), so we
+        just swap the scheme and append the kernels path directly -- no extra
+        ``api/`` prefix.
+        """
+        server = self.base_url
+        if server.startswith("https://"):
+            ws_base = "wss://" + server[len("https://") :]
+        elif server.startswith("http://"):
+            ws_base = "ws://" + server[len("http://") :]
+        else:
+            raise NetworkError(f"unsupported base_url scheme for websocket: {server!r}")
+        return f"{ws_base.rstrip('/')}/kernels/{kernel_id}/channels"
+
     # --- helpers ------------------------------------------------------------
     @staticmethod
     def _to_entry(item: dict[str, Any]) -> RemoteEntry:
