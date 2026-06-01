@@ -25,6 +25,25 @@ from jp.index import Index  # noqa: E402
 
 
 @pytest.fixture(autouse=True)
+def _reset_redaction_secrets():
+    """Isolate the global ``ui._KNOWN_SECRETS`` registry between tests.
+
+    ``ui.register_secret`` (called by ``Api.__init__``) adds to a module-level
+    set with no reset, so a secret registered by one test would mask that string
+    from every later test's output -- an order-dependent failure. Snapshot and
+    restore the set around each test.
+    """
+    from jp import ui
+
+    saved = set(ui._KNOWN_SECRETS)
+    try:
+        yield
+    finally:
+        ui._KNOWN_SECRETS.clear()
+        ui._KNOWN_SECRETS.update(saved)
+
+
+@pytest.fixture(autouse=True)
 def _isolate_user_config(tmp_path, monkeypatch):
     """Isolate every test from the real ``~/.config/jp`` credential store.
 

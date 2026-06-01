@@ -407,7 +407,8 @@ def test_terminal_ws_url_derivation():
 # kernels: ephemeral compute sessions (POST/DELETE/GET /api/kernels)
 # --------------------------------------------------------------------------- #
 def test_kernel_ws_url_uses_wss_and_api_path():
-    api = Api("https://hub.example/user/alice", token="t")  # base_url has NO trailing /api
+    # base_url has NO trailing /api
+    api = Api("https://hub.example/user/alice", token="tkn-secret-xyz")
     url = api.kernel_ws_url("KID")
     assert url == "wss://hub.example/user/alice/api/kernels/KID/channels"
     assert "token" not in url  # never in the URL
@@ -438,7 +439,7 @@ def test_create_kernel_posts_and_returns_id(monkeypatch):
 
     monkeypatch.setattr(apimod.urllib.request, "urlopen", fake_urlopen)
 
-    api = Api("https://hub.example/user/alice", token="t")  # NO trailing /api
+    api = Api("https://hub.example/user/alice", token="tkn-secret-xyz")  # NO trailing /api
     assert api.create_kernel() == "KID"
     assert seen["method"] == "POST"
     assert seen["url"] == "https://hub.example/user/alice/api/kernels"  # exact, single /api
