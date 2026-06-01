@@ -134,6 +134,34 @@ def parse_frame(buf: bytes | bytearray) -> tuple[bool, int, bytes, int] | None:
     return fin, opcode, payload, idx + length
 
 
+def build_handshake_request(
+    path: str,
+    host_header: str,
+    key: str,
+    *,
+    headers: dict[str, str] | None = None,
+    subprotocol: str | None = None,
+) -> str:
+    """Build the raw HTTP upgrade request line block (no I/O -- unit-testable).
+
+    When ``subprotocol`` is set, a ``Sec-WebSocket-Protocol`` line is emitted
+    (the kernel websocket needs ``v1.kernel.websocket.jupyter.org``).
+    """
+    lines = [
+        f"GET {path} HTTP/1.1",
+        f"Host: {host_header}",
+        "Upgrade: websocket",
+        "Connection: Upgrade",
+        f"Sec-WebSocket-Key: {key}",
+        "Sec-WebSocket-Version: 13",
+    ]
+    if subprotocol:
+        lines.append(f"Sec-WebSocket-Protocol: {subprotocol}")
+    for hkey, hval in (headers or {}).items():
+        lines.append(f"{hkey}: {hval}")
+    return "\r\n".join(lines) + "\r\n\r\n"
+
+
 # --------------------------------------------------------------------------- #
 # WebSocket connection
 # --------------------------------------------------------------------------- #
@@ -150,6 +178,7 @@ class WebSocket:
         self._frag_op: int | None = None
         self._frag = bytearray()
         self.closed = False
+        self.subprotocol: str | None = None
 
     @classmethod
     def connect(
@@ -159,12 +188,19 @@ class WebSocket:
         *,
         timeout: float = 30.0,
         ssl_context: ssl.SSLContext | None = None,
+        subprotocol: str | None = None,
     ) -> WebSocket:
         """Open a TCP/TLS connection to ``url`` and perform the WS handshake.
 
         ``headers`` are extra request headers (the caller passes the
         ``Authorization`` header here -- we never put a token in the URL). TLS is
         always verified for ``wss://`` (a default ``ssl`` context).
+
+        ``subprotocol``, when given, is sent as ``Sec-WebSocket-Protocol`` (and
+        retained on the connection). The kernel websocket REQUIRES
+        ``v1.kernel.websocket.jupyter.org`` -- its binary framing depends on the
+        server agreeing to that subprotocol. Terminal usage passes ``None`` and
+        is unaffected.
         """
         parts = urlsplit(url)
         secure = parts.scheme == "wss"
@@ -193,17 +229,10 @@ class WebSocket:
         try:
             key = base64.b64encode(os.urandom(16)).decode("ascii")
             host_header = f"{host}:{port}" if parts.port else host
-            lines = [
-                f"GET {path} HTTP/1.1",
-                f"Host: {host_header}",
-                "Upgrade: websocket",
-                "Connection: Upgrade",
-                f"Sec-WebSocket-Key: {key}",
-                "Sec-WebSocket-Version: 13",
-            ]
-            for hkey, hval in (headers or {}).items():
-                lines.append(f"{hkey}: {hval}")
-            sock.sendall(("\r\n".join(lines) + "\r\n\r\n").encode("latin1"))
+            request = build_handshake_request(
+                path, host_header, key, headers=headers, subprotocol=subprotocol
+            )
+            sock.sendall(request.encode("latin1"))
 
             resp = bytearray()
             while b"\r\n\r\n" not in resp:
@@ -218,6 +247,7 @@ class WebSocket:
             cls._verify_handshake(header_blob, key)
             sock.settimeout(None)  # blocking from here; reads are drained explicitly
             ws = cls(sock)
+            ws.subprotocol = subprotocol  # kept: binary framing depends on it
             ws._buf += rest  # bytes after the headers may already be frame data
             return ws
         except Exception:

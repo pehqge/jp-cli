@@ -14,6 +14,12 @@ def test_bootstrap_is_valid_python():
     compile(code, "<bootstrap>", "exec")  # must parse
 
 
+def test_bootstrap_writable_true_embeds_flag():
+    code = agent_loader.build_bootstrap(root="users/alice/proj", target="jp.fs", writable=True)
+    assert "writable=True" in code  # the writable flag is threaded into Agent(...)
+    compile(code, "<bootstrap>", "exec")  # still compiles
+
+
 def test_bootstrap_root_is_safely_quoted():
     # A crafted root must not be able to break out of the string literal.
     code = agent_loader.build_bootstrap(root='a"; import os; os.system("x")  #', target="jp.fs")

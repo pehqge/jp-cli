@@ -17,11 +17,11 @@ from pathlib import Path
 _AGENT_SRC = (Path(__file__).resolve().parent / "_agent" / "agentd.py").read_text(encoding="utf-8")
 
 
-def build_bootstrap(*, root: str, target: str = "jp.fs") -> str:
+def build_bootstrap(*, root: str, target: str = "jp.fs", writable: bool = False) -> str:
     register = (
-        "\n# --- jp agent bootstrap (read-only) ---\n"
+        "\n# --- jp agent bootstrap ---\n"
         f"def _jp_register():\n"
-        f"    _agent = Agent({root!r})\n"
+        f"    _agent = Agent({root!r}, writable={writable!r})\n"
         f"\n"
         f"    def _target(comm, open_msg):\n"
         f"        @comm.on_msg\n"

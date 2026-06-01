@@ -27,10 +27,28 @@ from jp._ws import (
     OP_TEXT,
     WebSocket,
     accept_key,
+    build_handshake_request,
     encode_frame,
     mask,
     parse_frame,
 )
+
+
+def test_connect_sends_subprotocol_header():
+    req = build_handshake_request(
+        "/api/kernels/abc/channels",
+        "host:443",
+        "KEY==",
+        headers={"Authorization": "token t"},
+        subprotocol="v1.kernel.websocket.jupyter.org",
+    )
+    assert "Sec-WebSocket-Protocol: v1.kernel.websocket.jupyter.org" in req
+    assert "Authorization: token t" in req
+
+
+def test_connect_omits_subprotocol_header_by_default():
+    req = build_handshake_request("/terminals/websocket/1", "host", "KEY==")
+    assert "Sec-WebSocket-Protocol" not in req
 
 
 # --------------------------------------------------------------------------- #

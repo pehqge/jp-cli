@@ -39,7 +39,16 @@ class FakeKernelWS:
 
     def send_binary(self, blob: bytes) -> None:
         _channel, blobs = kp.unpack_ws_v1(blob)
+        header = json.loads(blobs[0])
         content = json.loads(blobs[3])
+        # A real kernel instantiates the registered comm target on comm_open.
+        # Detect it by msg_type (faithful) or, defensively, by the presence of a
+        # ``target_name`` in the content, and auto-register that comm_id.
+        if header.get("msg_type") == "comm_open" or "target_name" in content:
+            comm_id = content.get("comm_id")
+            if comm_id:
+                self.open_comm(comm_id=comm_id, target=content.get("target_name", "jp.fs"))
+            return
         comm_id = content.get("comm_id")
         if comm_id not in self._comm_ids:
             return  # unknown comm: silently dropped, like a real kernel
