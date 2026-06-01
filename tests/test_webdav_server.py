@@ -275,3 +275,137 @@ def test_url_is_loopback(server):
     assert server.port != 0
     assert server.url == f"http://127.0.0.1:{server.port}/"
     assert os.path is not None  # keep os import meaningful even if env changes
+
+
+# --- macOS read-write mount handshake (writable mode only) ---------------
+#
+# macOS's built-in WebDAV client decides read-only vs read-write AT MOUNT
+# TIME from the server's OPTIONS response. To mount read-WRITE it requires
+# (a) DAV: 1, 2 (class 2 == locking), (b) the write verbs in Allow, and
+# (c) working LOCK/UNLOCK. Without these it mounts read-only and blocks the
+# save locally with "Read-only file system (os error 30)" before any write
+# reaches us. These tests pin the protocol the macOS client needs.
+
+
+def test_options_writable_advertises_dav_class_2(wserver):
+    srv, _ = wserver
+    status, headers, _ = _request(srv, "OPTIONS", "/")
+    assert status == 200
+    dav = headers.get("DAV", "")
+    assert "2" in dav
+    assert "1" in dav
+    allow = headers.get("Allow", "")
+    for verb in ("PUT", "DELETE", "MKCOL", "MOVE", "LOCK", "UNLOCK", "PROPPATCH"):
+        assert verb in allow, f"{verb} missing from Allow: {allow!r}"
+
+
+def test_options_readonly_is_class_1_only(server):
+    # Regression guard: read-only mounts MUST stay class 1, read verbs only.
+    status, headers, _ = _request(server, "OPTIONS", "/")
+    assert status == 200
+    dav = headers.get("DAV", "")
+    assert dav == "1"
+    assert "2" not in dav
+    allow = headers.get("Allow", "")
+    assert "PUT" not in allow
+    assert "LOCK" not in allow
+
+
+def test_lock_returns_token_when_writable(wserver):
+    srv, _ = wserver
+    status, headers, body = _request(srv, "LOCK", "/test.py")
+    assert status == 200
+    assert "opaquelocktoken:" in headers.get("Lock-Token", "")
+    text = body.decode("utf-8")
+    assert "<D:activelock>" in text
+
+
+def test_lock_forbidden_when_readonly(server):
+    status, _, body = _request(server, "LOCK", "/a.txt")
+    assert status == 403
+    assert body == b"read-only mount"
+
+
+def test_unlock_when_writable(wserver):
+    srv, _ = wserver
+    status, _, _ = _request(
+        srv, "UNLOCK", "/test.py", headers={"Lock-Token": "<opaquelocktoken:abc>"}
+    )
+    assert status == 204
+
+
+def test_proppatch_when_writable_returns_207(wserver):
+    srv, _ = wserver
+    body = (
+        b'<?xml version="1.0" encoding="utf-8"?>'
+        b'<D:propertyupdate xmlns:D="DAV:" '
+        b'xmlns:Z="urn:schemas-microsoft-com:">'
+        b"<D:set><D:prop>"
+        b"<D:getlastmodified>Tue, 01 Jun 2026 00:00:00 GMT</D:getlastmodified>"
+        b"<Z:Win32LastModifiedTime>Tue, 01 Jun 2026 00:00:00 GMT</Z:Win32LastModifiedTime>"
+        b"</D:prop></D:set>"
+        b"</D:propertyupdate>"
+    )
+    status, headers, resp = _request(
+        srv,
+        "PROPPATCH",
+        "/test.py",
+        body=body,
+        headers={"Content-Length": str(len(body))},
+    )
+    assert status == 207
+    assert "xml" in headers.get("Content-Type", "")
+    # Body must be valid XML multistatus reporting a 200 OK.
+    root = ET.fromstring(resp)
+    assert root.tag == f"{DAV_NS}multistatus"
+    assert b"200 OK" in resp
+
+
+def test_macos_save_sequence_writes_file(wserver):
+    # End-to-end reproduction of the real-world macOS save handshake that
+    # used to fail with "Read-only file system (os error 30)".
+    srv, root = wserver
+
+    # 1. OPTIONS -> mount must see class 2 to mount read-write.
+    status, headers, _ = _request(srv, "OPTIONS", "/")
+    assert status == 200
+    assert "2" in headers.get("DAV", "")
+
+    # 2. LOCK the target -> macOS needs a lock token before writing.
+    status, lock_headers, _ = _request(srv, "LOCK", "/new.txt")
+    assert status == 200
+    token = lock_headers.get("Lock-Token", "")
+    assert "opaquelocktoken:" in token
+
+    # 3. PUT the real body.
+    status, _, _ = _request(
+        srv,
+        "PUT",
+        "/new.txt",
+        body=b"hello world",
+        headers={"Content-Length": "11", "If": f"({token})"},
+    )
+    assert status == 201
+
+    # 4. UNLOCK.
+    status, _, _ = _request(srv, "UNLOCK", "/new.txt", headers={"Lock-Token": token})
+    assert status == 204
+
+    # 5. PROPPATCH (macOS sets timestamps after the save).
+    pp_body = (
+        b'<?xml version="1.0" encoding="utf-8"?>'
+        b'<D:propertyupdate xmlns:D="DAV:"><D:set><D:prop>'
+        b"<D:getlastmodified>Tue, 01 Jun 2026 00:00:00 GMT</D:getlastmodified>"
+        b"</D:prop></D:set></D:propertyupdate>"
+    )
+    status, _, _ = _request(
+        srv,
+        "PROPPATCH",
+        "/new.txt",
+        body=pp_body,
+        headers={"Content-Length": str(len(pp_body))},
+    )
+    assert status == 207
+
+    # The save actually landed on disk.
+    assert (root / "new.txt").read_bytes() == b"hello world"

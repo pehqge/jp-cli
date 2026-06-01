@@ -8,15 +8,25 @@ deps, stdlib only.
 Safety Charter: a mount is READ-ONLY by default. Every mutating WebDAV method
 (PUT/DELETE/MKCOL/MOVE/COPY/PROPPATCH/LOCK/UNLOCK) is refused with HTTP 403
 unless the server was constructed with ``writable=True`` (Phase 4 guarded write
-path). Even when writable, COPY/PROPPATCH/LOCK/UNLOCK stay 403 (out of scope),
-and a DELETE of a non-empty directory is refused: this server NEVER
-recursive-deletes the remote. The agent's jail (enforced remote-side) is
-forwarded verbatim; this server never resolves paths itself.
+path). Even when writable, COPY stays 403 (out of scope), and a DELETE of a
+non-empty directory is refused: this server NEVER recursive-deletes the remote.
+The agent's jail (enforced remote-side) is forwarded verbatim; this server
+never resolves paths itself.
+
+macOS read-write mounts: macOS's built-in WebDAV client decides read-only vs
+read-write AT MOUNT TIME from the OPTIONS response. To mount read-WRITE it
+requires the server to advertise ``DAV: 1, 2`` (class 2 == locking), list the
+write verbs in ``Allow``, and answer ``LOCK``/``UNLOCK`` successfully. In
+writable mode we therefore speak just enough of WebDAV class 2 -- including a
+FAKE-but-valid lock (we do NOT enforce real locking; this is a single-user
+mount) and a no-op ``PROPPATCH`` -- so the client mounts read-write and the
+save actually reaches us. None of this changes read-only behavior.
 """
 
 from __future__ import annotations
 
 import threading
+import uuid
 from email.utils import formatdate
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any
@@ -32,10 +42,14 @@ from ..remote_fs import (
 )
 
 # Verbs that could mutate the remote. PUT/DELETE/MKCOL/MOVE are honored only in
-# writable mode; the rest stay refused 403 even when writable (out of scope).
+# writable mode; LOCK/UNLOCK/PROPPATCH are answered (no-op/fake) in writable mode
+# so macOS will mount read-write; COPY stays refused 403 even when writable.
 _MUTATING = ("PUT", "DELETE", "MKCOL", "MOVE", "COPY", "PROPPATCH", "LOCK", "UNLOCK")
 # Verbs that remain 403 in BOTH modes (writable does not enable these).
-_ALWAYS_FORBIDDEN = ("COPY", "PROPPATCH", "LOCK", "UNLOCK")
+_ALWAYS_FORBIDDEN = ("COPY",)
+
+# ElementTree namespace prefix for the DAV: namespace.
+_DAV_NS = "{DAV:}"
 
 
 class _DavRequestHandler(BaseHTTPRequestHandler):
@@ -71,6 +85,25 @@ class _DavRequestHandler(BaseHTTPRequestHandler):
         raw = urlsplit(self.path).path
         return unquote(raw).lstrip("/")
 
+    def _read_body(self) -> bytes:
+        """Read exactly ``Content-Length`` bytes (or b"" if absent/zero).
+
+        Reading to EOF is unsafe on a keep-alive connection, so a missing
+        Content-Length is treated as an empty body rather than a blocking read.
+        """
+        clen = self.headers.get("Content-Length")
+        if clen is None:
+            return b""
+        try:
+            length = int(clen)
+        except ValueError:
+            return b""
+        return self.rfile.read(length) if length > 0 else b""
+
+    def _drain_body(self) -> None:
+        """Consume any request body so keep-alive connections stay in sync."""
+        self._read_body()
+
     def _send_error(self, status: int, body: bytes = b"") -> None:
         self.send_response(status)
         self.send_header("Content-Length", str(len(body)))
@@ -85,8 +118,20 @@ class _DavRequestHandler(BaseHTTPRequestHandler):
 
     def do_OPTIONS(self) -> None:
         self.send_response(200)
-        self.send_header("DAV", "1")
-        self.send_header("Allow", "OPTIONS, GET, HEAD, PROPFIND")
+        if self._writable:
+            # Class 2 (locking) + write verbs: required for macOS to mount
+            # read-write. The lock is faked (see do_LOCK) but the protocol
+            # advertisement must be honest enough for the client to proceed.
+            self.send_header("DAV", "1, 2")
+            self.send_header(
+                "Allow",
+                "OPTIONS, GET, HEAD, POST, PROPFIND, PROPPATCH, "
+                "PUT, DELETE, MKCOL, MOVE, COPY, LOCK, UNLOCK",
+            )
+        else:
+            self.send_header("DAV", "1")
+            self.send_header("Allow", "OPTIONS, GET, HEAD, PROPFIND")
+        self.send_header("MS-Author-Via", "DAV")
         self.send_header("Content-Length", "0")
         self.end_headers()
 
@@ -385,6 +430,124 @@ class _DavRequestHandler(BaseHTTPRequestHandler):
             self._send_error(412, b"destination exists")
             return
         self._send_error(204 if dest_existed else 201)
+
+    # --- WebDAV class 2 (writable mode only): faked locking + no-op props ---
+    #
+    # We do NOT implement real locking -- a jp mount is single-user, so there
+    # is no contention to arbitrate. These handlers exist purely to satisfy
+    # the macOS client's mount-time protocol checks so it mounts read-write.
+
+    def do_LOCK(self) -> None:
+        if not self._writable:
+            self._forbidden()
+            return
+        # Drain any request body (LOCK carries a lockinfo doc) so the next
+        # request on a keep-alive connection parses cleanly.
+        self._drain_body()
+        token = f"opaquelocktoken:{uuid.uuid4()}"
+        body = (
+            '<?xml version="1.0" encoding="utf-8"?>\n'
+            '<D:prop xmlns:D="DAV:"><D:lockdiscovery><D:activelock>\n'
+            "<D:locktype><D:write/></D:locktype>\n"
+            "<D:lockscope><D:exclusive/></D:lockscope>\n"
+            "<D:depth>infinity</D:depth>\n"
+            "<D:timeout>Second-3600</D:timeout>\n"
+            f"<D:locktoken><D:href>{escape(token)}</D:href></D:locktoken>\n"
+            "</D:activelock></D:lockdiscovery></D:prop>"
+        ).encode()
+        self.send_response(200)
+        self.send_header("Content-Type", 'application/xml; charset="utf-8"')
+        self.send_header("Lock-Token", f"<{token}>")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        if self.command != "HEAD":
+            self.wfile.write(body)
+
+    def do_UNLOCK(self) -> None:
+        if not self._writable:
+            self._forbidden()
+            return
+        self._drain_body()
+        self._send_error(204)
+
+    def do_PROPPATCH(self) -> None:
+        if not self._writable:
+            self._forbidden()
+            return
+        # macOS issues PROPPATCH after PUT to set timestamps (getlastmodified,
+        # Win32 props). We do not persist arbitrary props, but must report
+        # success or the save is treated as failed. Report each requested prop
+        # as 200 OK (no-op). Fall back to a generic empty propstat 200 OK.
+        path = self._resolve_path()
+        body = self._read_body()
+        propstats = self._proppatch_ok_propstats(body)
+        href = self._href_for(path, is_dir=False)
+        xml = (
+            '<?xml version="1.0" encoding="utf-8"?>\n'
+            '<D:multistatus xmlns:D="DAV:"><D:response>'
+            f"<D:href>{escape(href)}</D:href>"
+            f"{propstats}"
+            "</D:response></D:multistatus>"
+        )
+        payload = xml.encode("utf-8")
+        self.send_response(207, "Multi-Status")
+        self.send_header("Content-Type", 'application/xml; charset="utf-8"')
+        self.send_header("Content-Length", str(len(payload)))
+        self.end_headers()
+        if self.command != "HEAD":
+            self.wfile.write(payload)
+
+    def _proppatch_ok_propstats(self, body: bytes) -> str:
+        """Build a propstat block marking every requested prop as 200 OK.
+
+        Parses ``<D:set><D:prop>...`` children out of the PROPPATCH body. If
+        parsing yields nothing (unexpected shape / unparseable), returns a
+        single generic 200 OK propstat so the save still succeeds.
+        """
+        names = self._parse_proppatch_prop_names(body)
+        if not names:
+            return "<D:propstat><D:prop/><D:status>HTTP/1.1 200 OK</D:status></D:propstat>"
+        props = "".join(f"<{escape(n)}/>" for n in names)
+        return (
+            f"<D:propstat><D:prop>{props}</D:prop><D:status>HTTP/1.1 200 OK</D:status></D:propstat>"
+        )
+
+    @staticmethod
+    def _parse_proppatch_prop_names(body: bytes) -> list[str]:
+        """Extract qualified prop element names under ``<set><prop>``.
+
+        Refuses DOCTYPE (XXE / billion-laughs guard, matching PROPFIND), and
+        swallows parse errors -- a malformed body just yields the generic 200.
+        """
+        if not body or b"<!DOCTYPE" in body.upper():
+            return []
+        import xml.etree.ElementTree as ET  # stdlib, lazy import
+
+        try:
+            root = ET.fromstring(body)
+        except ET.ParseError:
+            return []
+        names: list[str] = []
+        # Find every <D:prop> under a <D:set> and collect its children's tags.
+        for setel in root.iter(f"{_DAV_NS}set"):
+            for propel in setel.iter(f"{_DAV_NS}prop"):
+                for child in propel:
+                    names.append(_qualify_tag(child.tag))
+        return names
+
+
+def _qualify_tag(tag: str) -> str:
+    """Turn a ``{namespace}local`` ElementTree tag into a ``D:local`` name.
+
+    DAV-namespaced tags become ``D:local``; anything else falls back to the
+    local name only (without a prefix) since we don't track foreign prefixes.
+    """
+    if tag.startswith("{"):
+        ns, _, local = tag[1:].partition("}")
+        if ns == "DAV:":
+            return f"D:{local}"
+        return local
+    return tag
 
 
 def _make_mutating_handler(method: str) -> Any:
