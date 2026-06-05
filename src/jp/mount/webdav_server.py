@@ -37,6 +37,7 @@ from __future__ import annotations
 
 import hmac
 import secrets
+import sys
 import threading
 import uuid
 from email.utils import formatdate
@@ -640,6 +641,17 @@ class _DavHTTPServer(ThreadingHTTPServer):
         self.fs = fs
         self.writable = writable
         self.secret = secret
+
+    def handle_error(self, request: Any, client_address: Any) -> None:
+        # The OS WebDAV client (macOS webdavfs especially) opens a pool of
+        # connections and abruptly RST-closes idle ones, which surfaces in the
+        # worker thread as ConnectionResetError/BrokenPipeError. These are
+        # benign churn, not handler bugs -- swallow them so a live mount does
+        # not spew tracebacks. Any other exception still prints normally.
+        exc = sys.exc_info()[1]
+        if isinstance(exc, ConnectionError):  # covers reset/aborted/broken-pipe
+            return
+        super().handle_error(request, client_address)
 
 
 class DavServer:

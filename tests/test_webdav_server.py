@@ -305,6 +305,29 @@ def test_url_contains_random_secret(server):
     assert re.fullmatch(r"[A-Za-z0-9_-]+", server.secret)
 
 
+def test_connection_reset_is_swallowed(server, capsys):
+    # The macOS WebDAV client RST-closes idle pooled connections; that benign
+    # churn must NOT spew a traceback from the server's worker threads.
+    httpd = server._httpd
+    try:
+        raise ConnectionResetError(54, "Connection reset by peer")
+    except ConnectionResetError:
+        httpd.handle_error(None, ("127.0.0.1", 12345))
+    captured = capsys.readouterr()
+    assert "Traceback" not in captured.err
+    assert "Traceback" not in captured.out
+
+
+def test_real_handler_error_still_reported(server, capsys):
+    # A non-connection error must still surface (we only swallow socket churn).
+    httpd = server._httpd
+    try:
+        raise ValueError("boom in a handler")
+    except ValueError:
+        httpd.handle_error(None, ("127.0.0.1", 12345))
+    assert "Traceback" in capsys.readouterr().err
+
+
 def test_secret_survives_redaction(server):
     # Regression: the mount URL must stay copy-pasteable. ui.redact() masks
     # 32+ hex blobs as likely Jupyter tokens; the capability secret is
