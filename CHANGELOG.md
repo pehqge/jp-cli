@@ -5,6 +5,40 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.0](https://github.com/pehqge/jpsync/compare/v1.1.1...v1.2.0) (2026-06-05)
+
+
+### Features
+
+* **changelog:** jp changelog command, version --changelog, post-update notes ([616689f](https://github.com/pehqge/jpsync/commit/616689fbec0a6733df6d8f39cb1c1795a8d12071))
+* **ci:** Gemini-generated release highlights and update/notifier docs ([e2e13a2](https://github.com/pehqge/jpsync/commit/e2e13a236f1005e8f6ea56a59129f8c11f8c406a))
+* **config:** manage global notifier/auto-update prefs without a workspace ([4f5b561](https://github.com/pehqge/jpsync/commit/4f5b5615932e8b376ba38080fdb5a9cdc98cc578))
+* **login:** link saved credentials to their origin site ([#22](https://github.com/pehqge/jpsync/issues/22)) ([ae7322e](https://github.com/pehqge/jpsync/commit/ae7322e57ce7eaeefdae7d431200d13e6c16f4a3))
+* **open:** jp open — open a workspace folder in the Jupyter web UI ([#23](https://github.com/pehqge/jpsync/issues/23)) ([ecace3b](https://github.com/pehqge/jpsync/commit/ecace3b08001badba4ac0bd559ff32c76d7c7618))
+* **prefs:** user-global preferences store ([84b993b](https://github.com/pehqge/jpsync/commit/84b993b3f13b034bc07e061e45f3c9e8e18ad794))
+* **run:** jp run — run a local script on the remote like a local run ([#24](https://github.com/pehqge/jpsync/issues/24)) ([0c89efb](https://github.com/pehqge/jpsync/commit/0c89efb56c11fddc5311460efa8cc362f0f1c7a5))
+* update notifier, opt-in auto-update, jp changelog, AI release notes ([3da0d78](https://github.com/pehqge/jpsync/commit/3da0d7805b352c70bc97c0bfa3c78c6405f5f440))
+* **update-notify:** passive update notifier with detached background worker ([3ceb1c4](https://github.com/pehqge/jpsync/commit/3ceb1c4a3bd33c279f592739793f038238df9a4a))
+
+
+### Bug Fixes
+
+* **ci:** drop --strict so pip-audit's editable skip is not fatal ([995120c](https://github.com/pehqge/jpsync/commit/995120ce4d32c70224565ebda342f13c7cce332c))
+* **ci:** send Gemini key via x-goog-api-key header, not URL query string ([9e12877](https://github.com/pehqge/jpsync/commit/9e128770d54e68385ebbcae7832823d9892177d5))
+* **ci:** skip the editable project in pip-audit ([5d127e3](https://github.com/pehqge/jpsync/commit/5d127e34f8e5638ff0c6d4083f2c29f780d97986))
+* **ci:** upgrade pip before pip-audit so a CVE in the runner's pip doesn't fail the build ([1b4bd00](https://github.com/pehqge/jpsync/commit/1b4bd001597b922fe9e2921a6d6e126f355a99e8))
+* **sync:** force type=file on hash/stat so jupytext-paired files sync ([#21](https://github.com/pehqge/jpsync/issues/21)) ([fba9d44](https://github.com/pehqge/jpsync/commit/fba9d44ccc6b72226acb51fd1da20b5efb9272f7))
+
+
+### Documentation
+
+* add Zenodo DOI badge and citation DOI ([fca80ad](https://github.com/pehqge/jpsync/commit/fca80ad60ec1a1ec215f14f08849d956be94f000))
+* fix Zenodo DOI badge (use direct SVG, no redirect) ([1917f3f](https://github.com/pehqge/jpsync/commit/1917f3f96e64d47f56c7b2d9d25d105154bb33a6))
+* point DOI badge image at version DOI record ([44cddb9](https://github.com/pehqge/jpsync/commit/44cddb93fb7ead1cf7fb9cf272620dc84f0a0972))
+* **update-notifier:** design spec for notifier, auto-update, changelog, AI release notes ([0106011](https://github.com/pehqge/jpsync/commit/010601132513de1926e54d616a216b6172636328))
+* **update-notifier:** implementation plan and spec refinements ([5db3656](https://github.com/pehqge/jpsync/commit/5db3656a544150476f8ca4ae8d3c78df3d187259))
+* use concept DOI for badge image so it tracks the latest release ([776490a](https://github.com/pehqge/jpsync/commit/776490aa726671d0aaba6114f6af3166b30c7d28))
+
 ## [1.1.1](https://github.com/pehqge/jpsync/compare/v1.1.0...v1.1.1) (2026-06-05)
 
 
