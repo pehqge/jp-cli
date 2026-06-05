@@ -57,12 +57,30 @@ non-interactive shell it refuses to start unless you also pass `--yes`.
   `finally`, even on `Ctrl-C` or error.
 - **Token never in a URL.** Your token travels only in the `Authorization`
   header on the websocket handshake.
+- **Capability-secret on the mount.** Loopback is not a per-user boundary: any
+  local process that finds the ephemeral port could otherwise read (or, when
+  writable, write) the mounted files. So the server serves only under a random
+  128-bit secret path segment — the URL is `http://127.0.0.1:<port>/<secret>/`
+  — and refuses any request without it (HTTP 404). This closes the trivial
+  port-scan vector.
+
+  **Residual, be honest about it:** while the mount is active, the full URL
+  (secret included) appears in the OS mount table — `mount` on macOS/Linux,
+  `net use` on Windows — which any local user can read. So the secret defends
+  against blind local port-scanners, **not** against a local user who actively
+  inspects the mount table on the *same* machine. Native OS mounting records
+  the URL by design; fully closing this would require a non-native transport
+  (e.g. a Unix-domain socket with per-user permissions), which would drop the
+  "mount with the OS's built-in client, no FUSE" property. On a hostile
+  multi-user host: prefer read-only, and unmount (`Ctrl-C`) when idle rather
+  than leaving a writable mount up.
 
 ## Mounting natively
 
 Pass `--mount <point>` and `jp live` will try to mount for you; if that fails it
-prints the exact command so you can run it yourself. The WebDAV URL is always
-`http://127.0.0.1:<port>/`.
+prints the exact command so you can run it yourself. The WebDAV URL is
+`http://127.0.0.1:<port>/<secret>/` — `jp live` prints the exact URL (with the
+per-session secret) each run; the `<port>` examples below stand in for it.
 
 - **macOS** (Finder / `mount_webdav`):
 

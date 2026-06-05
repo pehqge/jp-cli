@@ -279,29 +279,35 @@ def _dry_run(
         ui.out(stats.render_machine(rfs.statmachine()))
 
     if mountpoint:
-        from ..mount.os_mount import build_mount_plan, build_unmount_plan
+        from ..mount import os_mount
         from ..mount.webdav_server import DavServer
 
         srv = DavServer(rfs, writable=writable).start()
+        mounted = False
         try:
             url = srv.url
-            plan = build_mount_plan(url, mountpoint, sys.platform)
-            unmount_argv = build_unmount_plan(url, mountpoint, sys.platform)
+            plan = os_mount.build_mount_plan(url, mountpoint, sys.platform)
             ui.out(f"\nWebDAV server: {url}")
             ui.out(f"Mount note   : {plan.note}")
-            ui.out(f"Mount command: {' '.join(plan.argv)}")
-            ui.out(f"Umount cmd   : {' '.join(unmount_argv)}")
-            msg = (
-                "\nServer running at "
-                + url
-                + ". Mount with the command above, then press Enter here to stop."
-            )
+            # Auto-mount, mirroring `--live --mount`, so testing the mount is a
+            # single command -- no second terminal, no copy-paste of the secret
+            # URL, no orphaned mount if the manual umount is forgotten.
+            try:
+                os_mount.mount(url, mountpoint, platform=sys.platform)
+                mounted = True
+                ui.success(f"mounted at {mountpoint}")
+            except os_mount.MountError as exc:
+                ui.warn(f"automatic mount failed ({exc}); mount it manually:")
+                ui.out(f"  {' '.join(plan.argv)}")
+            msg = f"\nServer running at {url}. Press Enter here to stop and unmount."
             if sys.stdin.isatty():
                 ui.out(msg)
                 input()
             else:
                 ui.out(msg)
         finally:
+            if mounted:
+                os_mount.unmount(srv.url, mountpoint, platform=sys.platform)
             srv.stop()
 
     return EXIT_OK
