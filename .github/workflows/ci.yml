@@ -77,9 +77,12 @@ jobs:
       - run: python -m pip install -e ".[dev]" pip-audit
       # --skip-editable excludes the project's own editable install. Otherwise
       # pip-audit looks up jpsync==<just-bumped version> on PyPI, which is not
-      # published until release.yml runs afterwards, so --strict fails the
-      # release-merge build with "Dependency not found on PyPI".
-      - run: python -m pip_audit --strict --desc --skip-editable
+      # published until release.yml runs afterwards, so the audit failed the
+      # release-merge build with "Dependency not found on PyPI". --strict is
+      # dropped because it treats the skipped editable install itself as a hard
+      # error ("distribution marked as editable"); pip-audit still exits
+      # non-zero when it finds a real CVE in the dev dependency tree.
+      - run: python -m pip_audit --desc --skip-editable
 
   # Single required status check. Branch protection requires only this job,
   # so the test matrix can change without breaking protection or auto-merge.
