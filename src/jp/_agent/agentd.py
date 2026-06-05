@@ -217,8 +217,18 @@ class Agent:
         try:
             # os.pread is POSIX-only; lseek+read is portable (the agent normally
             # runs on a Linux server, but the test suite exercises it on Windows).
+            # os.read may return fewer bytes than asked, so loop until we have the
+            # full length or hit EOF -- matching pread's regular-file behavior.
             os.lseek(fd, max(0, int(offset)), os.SEEK_SET)
-            data = os.read(fd, length)
+            parts: list[bytes] = []
+            remaining = length
+            while remaining > 0:
+                chunk = os.read(fd, remaining)
+                if not chunk:
+                    break
+                parts.append(chunk)
+                remaining -= len(chunk)
+            data = b"".join(parts)
         finally:
             os.close(fd)
         return {"rid": rid, "ok": True, "size": len(data)}, [data]

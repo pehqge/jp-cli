@@ -197,7 +197,12 @@ def auto_mount_target(
             used_drive_letters if used_drive_letters is not None else _used_drive_letters_windows()
         )
         return first_free_drive_letter(used)
-    return str(Path(cwd) / leaf)
+    # POSIX target: join with forward slashes regardless of the HOST separator,
+    # so the result is correct on a macOS/Linux host and the pure logic is
+    # testable from a Windows host too.
+    import posixpath
+
+    return posixpath.join(cwd, leaf)
 
 
 def _prepare_dir_target(target: str) -> None:

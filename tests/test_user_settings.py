@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import stat
 from pathlib import Path
 
@@ -66,6 +67,7 @@ def test_corrupt_file_yields_defaults(cfg_home):
     assert user_settings.get_live_code_terminal() is True
 
 
+@pytest.mark.skipif(os.name == "nt", reason="POSIX file modes do not apply on Windows")
 def test_file_mode_is_0600(cfg_home):
     user_settings.set_live_access("writable")
     assert _mode(user_settings.settings_path()) == 0o600
