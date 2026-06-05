@@ -42,6 +42,15 @@ afterthought. This document explains the guarantees and how they are enforced.
    (which has no PTY there). On POSIX, `jp terminal` sends the token only in the
    `Authorization` header — including on the websocket handshake.
 
+   **At rest, the token is stored in plaintext** — the same model Git uses for
+   `~/.git-credentials`. The `0600` permission protects it from *other* users on
+   the machine, but not from software running as *you*: malware, a backup/sync
+   agent, or any process with your privileges can read the file. `jp`
+   deliberately does not encrypt it or use an OS keychain, because that would
+   add a runtime dependency and break the zero-dependency guarantee. If your
+   threat model includes a compromised local account, treat the token as
+   exposed — revoke it on the JupyterHub side and issue a new one.
+
 ## Why these specific rules
 
 These rules come from probing a real JupyterHub Contents API and observing how

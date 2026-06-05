@@ -15,6 +15,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          persist-credentials: false
       - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6
         with:
           python-version: "3.12"
@@ -34,6 +36,8 @@ jobs:
         python-version: ["3.9", "3.10", "3.11", "3.12", "3.13"]
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          persist-credentials: false
       - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6
         with:
           python-version: ${{ matrix.python-version }}
@@ -45,6 +49,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          persist-credentials: false
       - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6
         with:
           python-version: "3.12"
@@ -52,6 +58,24 @@ jobs:
       - run: python -m build
       - run: python -m zipapp src -m "jp.cli:main" -p "/usr/bin/env python3" -o jp.pyz
       - run: python jp.pyz version
+
+  audit:
+    name: Dependency vulnerability audit
+    runs-on: ubuntu-latest
+    # Advisory only: pip-audit surfaces known CVEs in the (dev-only) dependency
+    # tree. The runtime install ships zero dependencies, so this scans pytest /
+    # ruff / mypy and their transitive deps. Kept out of the required "CI
+    # success" gate (like mypy above) so a freshly-disclosed CVE in a dev tool
+    # never blocks unrelated PRs -- it shows up as a failed check to triage.
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6
+        with:
+          python-version: "3.12"
+      - run: python -m pip install -e ".[dev]" pip-audit
+      - run: python -m pip_audit --strict --desc
 
   # Single required status check. Branch protection requires only this job,
   # so the test matrix can change without breaking protection or auto-merge.
