@@ -46,6 +46,11 @@ def add_parser(subparsers: argparse._SubParsersAction) -> None:
     p.add_argument(
         "--dry-run", action="store_true", help="show what would be downloaded; write nothing"
     )
+    p.add_argument(
+        "--history",
+        action="store_true",
+        help="also fetch the committed version history backup from the remote (verified)",
+    )
     p.set_defaults(func=run)
 
 
@@ -94,4 +99,32 @@ def run(args: argparse.Namespace) -> int:
     ui.heading(f"cloning {cfg.prefix} -> {root}")
     outcome = sync.pull(root, cfg, api, index, ignore, dry_run=args.dry_run)
     report_outcome("clone", outcome, dry_run=args.dry_run)
+
+    # --history: after the normal file pull, also fetch the committed version
+    # history backup from <prefix>/__jp/ (every object byte-VERIFIED before it is
+    # placed -- see jp.versioning.fetch). Without --history, clone is byte-identical
+    # to before. Never runs on a dry-run (which writes nothing locally).
+    if getattr(args, "history", False) and not args.dry_run:
+        _fetch_history(root, cfg, api)
+
     return EXIT_PARTIAL if outcome.had_failures else EXIT_OK
+
+
+def _fetch_history(root: Path, cfg: Config, api) -> None:
+    """Fetch the remote version-history backup after a clone (best-effort report).
+
+    A verification failure (a corrupt/hostile remote object) RAISES out of
+    :func:`jp.versioning.fetch.fetch_history` so the CLI maps it to a non-zero exit
+    -- a clone of a backup whose history is untrustworthy should fail loudly. A
+    remote with no ``__jp`` backup is a friendly note, not an error.
+    """
+    from ..versioning import fetch as fetch_mod
+
+    ui.heading("fetching version history backup")
+    result = fetch_mod.fetch_history(root, cfg, api)
+    for w in result.warnings:
+        ui.warn(w)
+    if result.downloaded == 0 and all(not b.ref_updated for b in result.branches):
+        ui.info("no version history backup found on the remote (or already present)")
+    else:
+        ui.success(f"history: {result.downloaded} object(s) downloaded")

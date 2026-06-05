@@ -182,3 +182,62 @@ def bullets(lines: Iterable[str], indent: str = "  ") -> None:
         return
     for line in lines:
         print(indent + redact(line))
+
+
+# --- interactive prompts (TTY-aware, redaction-correct) ---------------------
+#
+# Two tiny helpers used by the DESTRUCTIVE paths (checkout, restore). The safety
+# contract is:
+#   * They are shown even in quiet mode (a confirmation is never a "non-essential"
+#     line we may silently swallow), but NEVER block a non-interactive run (CI,
+#     pipes): if stdin is not a tty we return the safe default without prompting.
+#   * Every prompt is routed through ``redact`` so a secret in the prompt text can
+#     never leak, exactly like every other line jp emits.
+#   * Prompts go to STDERR so they never pollute machine-readable stdout.
+
+
+def confirm(prompt: str, *, default: bool = False, assume_yes: bool = False) -> bool:
+    """Ask a yes/no question; return the boolean answer.
+
+    Resolution order (the safety contract):
+      * ``assume_yes`` (the ``-y``/``--yes`` flag) -> True immediately, no prompt.
+      * stdin is NOT a tty (CI, a pipe, a non-interactive shell) -> return
+        ``default`` WITHOUT prompting, so a destructive op never blocks waiting for
+        input that will never come. Callers pass ``default=False`` for anything
+        that would destroy data, so a non-interactive run declines by default.
+      * otherwise -> write the (redacted) prompt to stderr and read one line via
+        ``input()``: ``y``/``yes`` -> True, ``n``/``no`` -> False, empty -> the
+        ``default``, anything else -> the ``default`` (treated as "did not clearly
+        say yes"). EOF/Ctrl-D is treated as the default too.
+    """
+    if assume_yes:
+        return True
+    if not sys.stdin.isatty():
+        return default
+    suffix = " [Y/n] " if default else " [y/N] "
+    print(redact(prompt) + suffix, end="", file=sys.stderr, flush=True)
+    try:
+        answer = input().strip().lower()
+    except EOFError:
+        return default
+    if answer in ("y", "yes"):
+        return True
+    if answer in ("n", "no"):
+        return False
+    return default
+
+
+def ask_line(prompt: str) -> str:
+    """Prompt for a single line of free text on stderr; return it stripped.
+
+    Returns ``""`` when stdin is not a tty (a non-interactive run can supply no
+    answer, and callers treat the empty string as a decline). The prompt is
+    redacted before display. EOF returns ``""`` as well.
+    """
+    if not sys.stdin.isatty():
+        return ""
+    print(redact(prompt), end="", file=sys.stderr, flush=True)
+    try:
+        return input().strip()
+    except EOFError:
+        return ""

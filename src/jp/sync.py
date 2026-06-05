@@ -103,18 +103,36 @@ def sha256_file(path: Path) -> str:
     return h.hexdigest()
 
 
+# Top-level working-tree directory names RESERVED for jp's own bookkeeping,
+# symmetric with the remote meta dirs (see ``REMOTE_META_DIRS`` below). A LOCAL
+# top-level ``__jp/`` or ``jp-tmp/`` is NEVER synced: a normal push would upload
+# it into ``<prefix>/__jp`` and OVERWRITE the content-addressed history mirror
+# (PUT overwrites -> the stored object no longer hashes to its name -> corrupt
+# history that pull cannot reconcile, since ``__jp`` is remote-excluded). We
+# therefore reserve these names on the local side too, exactly as ``.jp`` is
+# reserved -- but ONLY at the top level (a deep ``proj/__jp`` maps to a distinct
+# remote path and stays synced, matching the remote rule).
+LOCAL_RESERVED_DIRS = {paths.REMOTE_TMP_DIR, "__jp"}
+
+# One-time warning latch so a reserved top-level dir is reported once per process
+# rather than on every scan (status/diff/push all call scan_local).
+_warned_reserved: set[str] = set()
+
+
 def scan_local(root: Path, ignore: IgnoreSet) -> dict[str, Path]:
     """Walk the working tree and return {rel_posix: absolute_path} for files.
 
-    Skips the ``.jp`` dir, ignored paths, and SYMLINKS (we never follow a
-    symlink into or out of the tree). Every discovered rel path is run through
-    ``normalize_rel`` so a weird filename cannot smuggle traversal.
+    Skips the ``.jp`` dir, the reserved top-level ``__jp``/``jp-tmp`` meta dirs,
+    ignored paths, and SYMLINKS (we never follow a symlink into or out of the
+    tree). Every discovered rel path is run through ``normalize_rel`` so a weird
+    filename cannot smuggle traversal.
     """
     root = Path(root).resolve()
     found: dict[str, Path] = {}
     for dirpath, dirnames, filenames in os.walk(root, followlinks=False):
         # Prune ignored / metadata / symlinked directories in place.
         rel_dir = os.path.relpath(dirpath, root)
+        is_top_level = rel_dir in (".", "")
         keep: list[str] = []
         for d in dirnames:
             abs_d = Path(dirpath) / d
@@ -122,6 +140,16 @@ def scan_local(root: Path, ignore: IgnoreSet) -> dict[str, Path]:
                 continue  # never descend into a symlinked directory
             rel_d = _rel_posix(rel_dir, d)
             if rel_d == paths.DOT_DIR or ignore.is_ignored(rel_d, is_dir=True):
+                continue
+            # RESERVED meta dir directly under the root -> never sync it (would
+            # clobber the remote history mirror). Warn once, then prune it.
+            if is_top_level and d in LOCAL_RESERVED_DIRS:
+                if d not in _warned_reserved:
+                    _warned_reserved.add(d)
+                    ui.warn(
+                        f"top-level '{d}/' is a reserved jp name (history mirror / temp); "
+                        "it will NOT be synced"
+                    )
                 continue
             keep.append(d)
         dirnames[:] = keep
@@ -150,6 +178,19 @@ def _rel_posix(rel_dir: str, name: str) -> str:
 # --------------------------------------------------------------------------- #
 # Remote scan
 # --------------------------------------------------------------------------- #
+# Top-level remote meta directories that are jp's OWN bookkeeping, NOT user
+# content: ``__jp`` is the versioning history mirror (objects + refs) and
+# ``jp-tmp`` is the remote temp dir for atomic writes. They are EXCLUDED from
+# sync so that ``jp pull`` never downloads the object store into the working tree
+# and a mirror-mode ``jp push`` never lists them as deletion candidates. Both are
+# NON-dotted on purpose (the server runs allow_hidden=False). The exclusion is
+# scoped to the FIRST segment directly under the prefix only -- a user directory
+# that merely contains a child named ``__jp`` deeper down is still synced. This
+# is the SAME reserved set enforced on the local side (``LOCAL_RESERVED_DIRS``),
+# so the two ends can never drift.
+REMOTE_META_DIRS = LOCAL_RESERVED_DIRS
+
+
 def scan_remote(api: Api, cfg: Config) -> dict[str, RemoteEntry]:
     """Recursively list the remote prefix; return {rel_posix: RemoteEntry}.
 
@@ -181,6 +222,14 @@ def _walk_remote(api: Api, prefix: str, api_path: str, acc: dict[str, RemoteEntr
             # Skip anything the server claims is outside our prefix.
             continue
         rel = inside[len(prefix) + 1 :] if inside != prefix else ""
+        # EXCLUDE jp's own meta names (the history mirror ``__jp`` and the remote
+        # temp dir ``jp-tmp``) but ONLY when they sit DIRECTLY under the prefix
+        # (rel has no ``/``). A user dir merely containing one of these names
+        # deeper down is still synced. This runs BEFORE the type branch so a meta
+        # name is skipped whether the server reports it as a directory OR a file
+        # (a remote *file* literally named ``__jp`` must never be materialized).
+        if rel in REMOTE_META_DIRS:
+            continue
         if entry.type == "directory":
             _walk_remote(api, prefix, entry.path, acc)
         elif rel:
@@ -402,10 +451,23 @@ def push(
     ignore: IgnoreSet,
     *,
     dry_run: bool = False,
+    only_paths: set[str] | None = None,
 ) -> Outcome:
+    """Upload local changes to the remote (additive; never deletes).
+
+    ``only_paths`` is the OPT-IN path-scope filter (``jp push PATH...``). When it
+    is ``None`` the behavior is exactly today's: every eligible local change is
+    pushed and mirror-delete candidates are computed. When it is a non-empty set
+    of NORMALIZED rel paths, push acts ONLY on files whose normalized rel is in
+    the set OR lives under a directory named in the set -- and it is
+    ADDITIVE-ONLY: ``deletable`` is left empty, because naming one local file
+    tells us nothing about remote files that should be deleted.
+    """
     prefix = paths.validate_prefix(cfg.prefix)
     outcome = Outcome()
     states = diff(root, cfg, api, index, ignore)
+    if only_paths is not None:
+        states = [st for st in states if _in_scope(st.rel, only_paths)]
     created_dirs: set[str] = set()
     # "protect" uploads dotfiles under a reversible server-safe alias; the default
     # "skip" policy reports them and never uploads (the server rejects hidden names).
@@ -483,12 +545,26 @@ def push(
 
     # Mirror-mode candidates: remote files with no local counterpart. The engine
     # NEVER deletes -- the command layer confirms each one (see commands/push.py).
-    outcome.deletable = [
-        st.rel
-        for st in states
-        if st.remote_exists and not st.local_exists and not paths.is_hidden(st.rel)
-    ]
+    # A SCOPED push (only_paths) is additive-only: naming one local file cannot
+    # imply remote deletions, so we never compute deletion candidates for it.
+    if only_paths is None:
+        outcome.deletable = [
+            st.rel
+            for st in states
+            if st.remote_exists and not st.local_exists and not paths.is_hidden(st.rel)
+        ]
     return outcome
+
+
+def _in_scope(rel: str, only_paths: set[str]) -> bool:
+    """True if ``rel`` is one of ``only_paths`` or lives under one of them.
+
+    Each entry of ``only_paths`` is an already-NORMALIZED rel path that may name
+    a file (exact match) or a directory (``rel`` is under it -- ``p/...``). The
+    comparison is purely structural on normalized POSIX rels, so it never touches
+    the filesystem.
+    """
+    return any(rel == p or rel.startswith(p + "/") for p in only_paths)
 
 
 def _ensure_remote_dirs(api: Api, prefix: str, remote_path: str, created: set[str]) -> None:

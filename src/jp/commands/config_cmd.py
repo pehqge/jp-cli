@@ -53,9 +53,21 @@ def add_parser(subparsers: argparse._SubParsersAction) -> None:
     p.set_defaults(func=run)
 
 
+def _resolve_attr(key: str) -> str:
+    """Map a user-facing config KEY to the Config attribute it addresses.
+
+    A registered setting is resolved through its SettingSpec's ``attr_name`` (so a
+    DOTTED display key like ``versioning.push_prompt`` reaches the underscore
+    attribute ``versioning_push_prompt``). An unregistered key (a power-user
+    connection field such as ``base_url``) is its own attribute name.
+    """
+    spec = BY_KEY.get(key)
+    return spec.attr_name if spec is not None else key
+
+
 def _print_list(cfg: config_mod.Config) -> None:
     for key in (*_CONNECTION_KEYS, *(s.key for s in SPECS)):
-        ui.info(f"{key} = {getattr(cfg, key, '')}")
+        ui.info(f"{key} = {getattr(cfg, _resolve_attr(key), '')}")
 
 
 def run(args: argparse.Namespace) -> int:
@@ -69,14 +81,18 @@ def run(args: argparse.Namespace) -> int:
     if args.action == "get":
         if not args.key:
             raise UsageError("config get requires a key")
-        ui.info(f"{getattr(cfg, args.key, '')}")
+        ui.info(f"{getattr(cfg, _resolve_attr(args.key), '')}")
         return EXIT_OK
     if args.action == "set":
         if not args.key or args.value is None:
             raise UsageError("config set requires a key and a value")
-        if not hasattr(cfg, args.key):
-            raise UsageError(f"unknown config key: {args.key}")
         spec = BY_KEY.get(args.key)
+        # The Config attribute this key edits: via the spec for a registered
+        # setting (so a dotted display key reaches its underscore attribute), or
+        # the key itself for a power-user connection field.
+        attr = _resolve_attr(args.key)
+        if not hasattr(cfg, attr):
+            raise UsageError(f"unknown config key: {args.key}")
         value: object = args.value
         if spec is not None:
             try:
@@ -86,7 +102,7 @@ def run(args: argparse.Namespace) -> int:
             if spec.options and value not in spec.options:
                 allowed = ", ".join(spec.fmt(o) for o in spec.options)
                 raise UsageError(f"{args.key} must be one of: {allowed}")
-        setattr(cfg, args.key, value)
+        setattr(cfg, attr, value)
         config_mod.save(ctx.root, cfg)
         ui.success(f"set {args.key} = {spec.fmt(value) if spec else value}")
         return EXIT_OK
@@ -109,7 +125,7 @@ def run(args: argparse.Namespace) -> int:
         tui.Setting(
             key=s.key,
             label=s.label,
-            value=getattr(cfg, s.key),
+            value=getattr(cfg, s.attr_name),
             options=s.options,
             help_text=s.help_text,
             fmt=s.fmt,
@@ -126,7 +142,8 @@ def run(args: argparse.Namespace) -> int:
         ui.info("no changes")
         return EXIT_OK
     for r in changed:
-        setattr(cfg, r.key, r.value)
+        # ``r.key`` is the display key; resolve it back to the Config attribute.
+        setattr(cfg, _resolve_attr(r.key), r.value)
     config_mod.save(ctx.root, cfg)
     ui.success(f"saved {len(changed)} change(s): " + ", ".join(r.key for r in changed))
     return EXIT_OK

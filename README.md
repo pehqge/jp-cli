@@ -185,6 +185,130 @@ the session is cleaned up when you exit. See the
 
 ---
 
+## Versioning
+
+`jp` has an optional, git-like **versioning** layer that lives entirely inside
+`.jp/` — snapshot your working tree, see what changed, and roll back. It is
+**fully opt-in**: until your first `jp add` / `jp commit`, `jp` behaves exactly
+as before and your `config.json` never grows a single versioning key. Non-users
+never see it.
+
+> It is *not* git. There is no version history on a JupyterHub by default; `jp`
+> builds its own content-addressed store under `.jp/` and can optionally mirror
+> it to the server. No branches in v1.
+
+### Everyday flow
+
+```bash
+jp add -A                  # stage the whole working tree (or: jp add path...)
+jp commit -m "first cut"   # snapshot the staged tree
+jp log                     # see history (--oneline / --stat)
+jp show <commit>           # what a commit changed
+jp checkout <commit>       # roll the working tree back to a commit
+jp status                  # now also shows staged / not-staged when active
+```
+
+`jp add` snapshots file *content* at add time into `.jp/staged.json`;
+`jp commit -m` records the staged tree as a commit. With no `-m`, commit
+refuses. With nothing staged, commit refuses unless `--allow-empty`. Hashes are
+shown short (12 chars), git-style.
+
+When versioning is active, `jp status` appends a **Versioning** section
+(staged / modified / new / deleted, all computed offline) and `jp diff --staged`
+shows the staged-vs-HEAD diff — both with zero network calls.
+
+### Pushing with versioning
+
+When versioning is active and you have uncommitted changes, `jp push` first
+offers to commit:
+
+```
+You have uncommitted changes.
+  [c] commit them first, then push
+  [p] push without versioning  (this once)
+  [a] always push without versioning  (don't ask again)
+  [x] cancel
+```
+
+- `--raw` (alias `--no-verify`) skips the gate and pushes exactly what is on disk.
+- `versioning.push_prompt=never` disables the prompt permanently (the `[a]`
+  choice sets this for you; re-enable with `jp config set versioning.push_prompt ask`).
+- In CI / a non-tty it **never blocks** — it prints one warning and proceeds.
+
+For a quick one-file push without committing, name the path(s):
+
+```bash
+jp push notebook.ipynb     # push only this file, additive, no commit ceremony
+```
+
+### Backing history up to the remote
+
+By default history is local only. The first push that has unmirrored history
+asks once whether to also back it up to the server:
+
+```
+Save version history to the remote too? (survives deleting local .jp)
+  [a] always   back up on every push
+  [n] never    keep history local only
+  [o] once     back up now -- run `jp push --backup-history` to repeat later
+```
+
+Your choice is saved as `versioning.mirror_history` (`ask`/`always`/`never`).
+`jp push --backup-history` forces a one-shot backup regardless of the setting.
+History mirrors to a reserved **`__jp/`** folder under your remote prefix
+(content-addressed objects + refs), so it survives deleting your local `.jp/`.
+A mirror failure is only ever a warning — it never blocks or fails the data push.
+
+Bring history back from the remote:
+
+```bash
+jp fetch                   # download committed history (verified) into .jp/
+jp restore                 # fetch + check out HEAD (recover after losing .jp/)
+jp clone <url> --history   # clone a folder and its history backup together
+```
+
+Every object fetched from the (untrusted) server is re-hashed before it is
+placed locally; a corrupt or tampered object aborts the fetch. The local ref is
+advanced only on a proven fast-forward.
+
+### Maintenance
+
+```bash
+jp fsck                    # verify store integrity (re-hash reachable objects)
+jp gc                      # report unreachable objects that could be reclaimed
+jp gc --prune              # actually delete them (older than --grace days; default 14)
+```
+
+### Opting out
+
+```bash
+jp unversion               # remove LOCAL history (objects/refs/HEAD/staged)
+```
+
+`jp unversion` deletes only the local version store; your `config.json`,
+credentials, sync base (`index.json`), and **all working files** are untouched.
+It never deletes the remote: if a mirror exists it prints how to remove the
+`<prefix>/__jp/` folder by hand (e.g. via the Jupyter file browser).
+
+### Honest limits
+
+- **No sub-file delta.** A changed large binary stores a whole new object
+  (mitigated by dedup, gzip, and `jp gc`).
+- **Big files are skipped.** Files larger than `versioning.max_blob_mb`
+  (default 100 MiB) are not versioned (a warning tells you, and the working-file
+  sync is unaffected).
+- **Notebooks use a hybrid model.** The original `.ipynb` is stored faithfully
+  (outputs included), but change detection ignores outputs — a pure re-run (same
+  code, new outputs) does **not** create a new version. Set
+  `versioning.notebook_outputs=full` to version every byte change instead.
+- **No branches** in v1 (single linear `main`).
+
+See [docs/commands.md](docs/commands.md) for the full per-command reference and
+[docs/architecture.md](docs/architecture.md) for the object model and on-disk
+layout.
+
+---
+
 ## Command reference
 
 | Command | What it does |
@@ -195,7 +319,15 @@ the session is cleaned up when you exit. See the
 | `jp status` | Show local vs. remote differences. Read-only. |
 | `jp push` | Upload local changes. Additive by default. |
 | `jp pull` | Download remote changes. Additive by default. |
-| `jp diff [path]` | Show file-level differences. |
+| `jp diff [path]` | Show file-level differences. `--staged` diffs the staging area against HEAD (offline). |
+| `jp add [path...]` | Stage files for the next commit (`-A` for the whole tree). Opt-in versioning. |
+| `jp commit -m <msg>` | Snapshot the staged tree as a commit. |
+| `jp log` | Show commit history (`--oneline`, `--stat`). |
+| `jp show [commit]` | Show a commit and the diff it introduced. |
+| `jp checkout <commit>` | Restore the working tree from a commit (roll back). |
+| `jp fetch` / `jp restore` | Bring committed history back from the remote backup (verified). |
+| `jp fsck` / `jp gc` | Verify store integrity / reclaim unreachable objects. |
+| `jp unversion` | Remove local version history (working files + config untouched). |
 | `jp ls [remote-path]` | List a remote directory (no local writes). |
 | `jp config` | Interactive settings editor (see below). Also `config get/set/list`. |
 | `jp ignore [pattern]` | Manage `.jpignore` patterns. |
@@ -309,7 +441,11 @@ command for your OS.
 
 Each workspace stores its settings in `.jp/config.json` (JSON, never the token
 value). Keys: `base_url`, `prefix`, `credential`, `token_path`, `mirror`,
-`dotfiles`, `color`, `timeout`. See [docs/commands.md](docs/commands.md) and
+`dotfiles`, `color`, `timeout`. When you adopt versioning, the opt-in
+`versioning.*` keys appear (only when changed from their default):
+`versioning.push_prompt`, `versioning.mirror_history`,
+`versioning.notebook_outputs`, `versioning.max_blob_mb`, `versioning.author`.
+See [docs/commands.md](docs/commands.md) and
 [docs/architecture.md](docs/architecture.md).
 
 ---
@@ -340,7 +476,9 @@ public issue.
 ## FAQ
 
 **Is `jp` related to git?** No — it borrows git's *workflow*, not its internals.
-There's no remote version history on a JupyterHub.
+A JupyterHub has no built-in version history; the optional opt-in
+[versioning](#versioning) layer adds its own under `.jp/` (single linear `main`,
+no branches in v1).
 
 **Does it need Jupyter installed locally?** No. Just Python 3.9+; it talks to the
 Hub over HTTPS.

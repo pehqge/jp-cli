@@ -24,6 +24,71 @@ from .paths import DOT_DIR, validate_prefix
 
 CONFIG_NAME = "config.json"
 
+# Maps a DOTTED versioning display/JSON key -> the Python attribute on Config.
+# Single source of truth for serialization, from_json, and the dotted-attr
+# routing on Config so the three can never drift.
+_VERSIONING_KEY_MAP: dict[str, str] = {
+    "versioning.push_prompt": "versioning_push_prompt",
+    "versioning.mirror_history": "versioning_mirror_history",
+    "versioning.notebook_outputs": "versioning_notebook_outputs",
+    "versioning.max_blob_mb": "versioning_max_blob_mb",
+    "versioning.author": "versioning_author",
+}
+
+# Allowed enum values for the enum-typed versioning settings. An unknown value is
+# sanitized back to the default on load (mirroring how ``color``/``dotfiles`` are
+# handled) so a hand-edited / tampered config can never select an unsupported mode
+# (notably the deliberately-unsupported, lossy notebook "strip").
+_VERSIONING_ENUMS: dict[str, tuple[str, ...]] = {
+    "versioning_push_prompt": ("ask", "never", "always"),
+    "versioning_mirror_history": ("ask", "always", "never"),
+    "versioning_notebook_outputs": ("hybrid", "full"),
+}
+
+# Defaults for every versioning attribute (only-if-non-default serialization).
+_VERSIONING_DEFAULTS: dict[str, object] = {
+    "versioning_push_prompt": "ask",
+    "versioning_mirror_history": "ask",
+    "versioning_notebook_outputs": "hybrid",
+    "versioning_max_blob_mb": 100,
+    "versioning_author": "",
+}
+
+
+def _sanitize_enum(raw: object, attr: str) -> str:
+    """Coerce ``raw`` to one of ``attr``'s allowed enum values, else its default.
+
+    Mirrors the color/dotfiles handling in :meth:`Config.from_json`: a missing,
+    unknown, or unsupported value (e.g. the deliberately-unsupported notebook
+    "strip") falls back to the attribute's default rather than raising, so a
+    hand-edited config can never select an invalid mode.
+    """
+    allowed = _VERSIONING_ENUMS[attr]
+    default = str(_VERSIONING_DEFAULTS[attr])
+    value = str(raw).strip().lower() if raw is not None else ""
+    return value if value in allowed else default
+
+
+def _sanitize_positive_int(raw: object, default: int) -> int:
+    """Coerce ``raw`` to a POSITIVE int, else ``default`` (bad/<=0 -> default).
+
+    Rejects non-ints and non-positive values (and a float like ``1.5`` that does
+    not represent a whole number) so ``versioning.max_blob_mb`` is always a sane,
+    positive threshold even after a tampered config. Accepts only the JSON scalar
+    types a config can legitimately carry (int / str / a whole-number float).
+    """
+    # A real float that is not a whole number (e.g. 1.5) is rejected outright;
+    # int() would silently truncate it, hiding a malformed config value.
+    if isinstance(raw, float) and not raw.is_integer():
+        return default
+    if not isinstance(raw, (int, float, str)):
+        return default
+    try:
+        value = int(raw)
+    except (TypeError, ValueError):
+        return default
+    return value if value > 0 else default
+
 
 @dataclass
 class Config:
@@ -47,6 +112,28 @@ class Config:
     # Colored output: auto (tty only) | always | never. Defaults to "always"
     # so jp is colorful out of the box; NO_COLOR / --no-color still override it.
     color: str = "always"
+    # --- versioning (OPT-IN) ----------------------------------------------- #
+    # These five fields drive the git-like versioning feature. They are written
+    # to config.json ONLY when changed from their default (see ``to_json``), so a
+    # non-adopter's config never grows a single versioning key -- the opt-in
+    # invariant. The Python attribute names use underscores; the on-disk / display
+    # keys are the dotted ``versioning.*`` names (see ``_VERSIONING_KEY_MAP``).
+    # ``jp config`` resolves the dotted display key to the underscore attribute via
+    # the SettingSpec's ``attr`` -- Config stays a PLAIN dataclass (no attribute
+    # magic), so mypy still catches a typo'd attribute access on this core class.
+    #
+    # When (on push, after committing) to prompt to push the commit history.
+    versioning_push_prompt: str = "ask"  # ask | never | always
+    # Whether to also mirror the versioning history to the remote on push.
+    versioning_mirror_history: str = "ask"  # ask | always | never
+    # Notebook storage policy. "hybrid" stores the original bytes but change-detects
+    # outputs-free (a pure re-run is suppressed); "full" versions every byte change
+    # (outputs included). "strip" is intentionally unsupported in v1 (lossy).
+    versioning_notebook_outputs: str = "hybrid"  # hybrid | full
+    # Refuse-to-version blob size threshold in MiB (used by the remote mirror).
+    versioning_max_blob_mb: int = 100
+    # Freeform commit identity ("Name <email>"); "" falls back to $USER.
+    versioning_author: str = ""
     extra: dict[str, Any] = field(default_factory=dict)
 
     @property
@@ -70,6 +157,13 @@ class Config:
             data["token_path"] = self.token_path
         if self.credential:
             data["credential"] = self.credential
+        # Versioning keys are written ONLY when they differ from their default, so
+        # a non-adopter's config.json never grows a single versioning key. The
+        # DOTTED display key is used on disk (e.g. "versioning.push_prompt").
+        for dotted, attr in _VERSIONING_KEY_MAP.items():
+            value = getattr(self, attr)
+            if value != _VERSIONING_DEFAULTS[attr]:
+                data[dotted] = value
         data.update(self.extra)
         return data
 
@@ -85,6 +179,10 @@ class Config:
             "mirror",
             "color",
         }
+        # The dotted versioning keys are KNOWN too, so they never leak into the
+        # opaque ``extra`` dict (which would otherwise round-trip them verbatim and
+        # double-write them). The split treats "versioning.*" as recognized.
+        known |= set(_VERSIONING_KEY_MAP)
         extra = {k: v for k, v in data.items() if k not in known}
         base_url = str(data.get("base_url", "")).strip()
         prefix = str(data.get("prefix", "")).strip()
@@ -105,6 +203,18 @@ class Config:
         dotfiles = str(data.get("dotfiles", "skip")).strip().lower() or "skip"
         if dotfiles not in ("skip", "protect"):
             dotfiles = "skip"
+        # Versioning enums: read the dotted key, sanitize an unknown value back to
+        # the default exactly like color/dotfiles above (so a tampered config or a
+        # "strip" notebook mode silently degrades to the safe default, never errors).
+        v_push = _sanitize_enum(data.get("versioning.push_prompt"), "versioning_push_prompt")
+        v_mirror = _sanitize_enum(
+            data.get("versioning.mirror_history"), "versioning_mirror_history"
+        )
+        v_nb = _sanitize_enum(
+            data.get("versioning.notebook_outputs"), "versioning_notebook_outputs"
+        )
+        v_blob = _sanitize_positive_int(data.get("versioning.max_blob_mb"), 100)
+        v_author = str(data.get("versioning.author", "") or "")
         cfg = cls(
             base_url=base_url.rstrip("/"),
             prefix=prefix,
@@ -114,6 +224,11 @@ class Config:
             timeout=timeout,
             mirror=bool(data.get("mirror", False)),
             color=color,
+            versioning_push_prompt=v_push,
+            versioning_mirror_history=v_mirror,
+            versioning_notebook_outputs=v_nb,
+            versioning_max_blob_mb=v_blob,
+            versioning_author=v_author,
             extra=extra,
         )
         return cfg

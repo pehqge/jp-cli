@@ -25,6 +25,31 @@ def test_config_roundtrip_stores_no_token(tmp_path):
     assert loaded.prefix == "users/alice"
 
 
+def test_default_config_writes_no_versioning_keys(tmp_path):
+    """Opt-in invariant: a non-adopter's config.json never grows versioning keys."""
+    root = tmp_path / "r"
+    root.mkdir()
+    config_mod.save(root, Config(base_url="https://h/api", prefix="users/alice"))
+    raw = json.loads((root / ".jp" / "config.json").read_text())
+    assert not any(k.startswith("versioning.") for k in raw), raw
+    # And the original, always-written keys are still present and unchanged.
+    assert raw["base_url"] == "https://h/api"
+    assert raw["color"] == "always"
+
+
+def test_changed_versioning_key_roundtrips_under_dotted_key(tmp_path):
+    root = tmp_path / "r"
+    root.mkdir()
+    cfg = Config(base_url="https://h/api", prefix="users/alice")
+    cfg.versioning_notebook_outputs = "full"
+    config_mod.save(root, cfg)
+    raw = json.loads((root / ".jp" / "config.json").read_text())
+    # Written under the DOTTED display key, and only the changed key appears.
+    assert raw["versioning.notebook_outputs"] == "full"
+    assert "versioning.push_prompt" not in raw
+    assert config_mod.load(root).versioning_notebook_outputs == "full"
+
+
 def test_config_load_revalidates_prefix(tmp_path):
     root = tmp_path / "r"
     (root / ".jp").mkdir(parents=True)

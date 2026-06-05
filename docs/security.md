@@ -51,6 +51,20 @@ afterthought. This document explains the guarantees and how they are enforced.
    threat model includes a compromised local account, treat the token as
    exposed — revoke it on the JupyterHub side and issue a new one.
 
+6. **Versioning history is verified, opt-in, and never blocks sync.** The
+   optional version store lives entirely under `.jp/` and is a separate concern
+   from sync (it never touches `.jp/index.json`). Objects are content-addressed
+   and write-once, and every read re-hashes the decompressed payload — so
+   bit-rot, truncation, or tampering becomes a loud error, not corrupt history.
+   When history is mirrored to the server, the remote is treated as **untrusted**
+   on the way back: `jp fetch`/`jp restore`/`jp clone --history` re-hash every
+   object (with a decompression cap against "zip bombs") before placing it, and
+   advance refs only on a proven fast-forward. The reserved `__jp`/`jp-tmp`
+   top-level names are excluded from sync on both ends so the backup can't be
+   pulled into the tree or offered for deletion. The history mirror is
+   best-effort and can never change a `jp push`'s exit code, and `jp unversion`
+   removes local history without ever touching the remote or your working files.
+
 ## Why these specific rules
 
 These rules come from probing a real JupyterHub Contents API and observing how
