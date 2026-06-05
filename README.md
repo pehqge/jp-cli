@@ -8,7 +8,7 @@
   <a href="https://github.com/pehqge/jpsync/actions/workflows/ci.yml"><img src="https://github.com/pehqge/jpsync/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
   <a href="https://pypi.org/project/jpsync/"><img src="https://img.shields.io/pypi/v/jpsync?color=blue&logo=pypi&logoColor=white" alt="PyPI version"></a>
   <img src="https://img.shields.io/badge/python-3.9%2B-blue?logo=python&logoColor=white" alt="Python 3.9+">
-  <a href="https://github.com/pehqge/jpsync/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-MIT-yellow" alt="License: MIT"></a>
+  <a href="https://github.com/pehqge/jpsync/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-Apache%202.0-blue" alt="License: Apache 2.0"></a>
   <img src="https://img.shields.io/badge/dependencies-zero-brightgreen" alt="Zero dependencies">
   <a href="https://github.com/sponsors/pehqge"><img src="https://img.shields.io/badge/sponsor-%E2%9D%A4-db61a2?logo=githubsponsors&logoColor=white" alt="Sponsor"></a>
 </p>
@@ -396,4 +396,4 @@ workflow, you can support its development — thank you! ☕
 
 ## License
 
-[MIT](LICENSE) © Pedro Gimenez
+[Apache 2.0](LICENSE) © Pedro Henrique Gimenez
