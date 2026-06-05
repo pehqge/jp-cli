@@ -444,3 +444,109 @@ def test_terminal_ws_url_derivation():
     # so the constructor's cleartext-credential guard is satisfied with "".)
     plain = Api("http://localhost:8888/api", "")
     assert plain.terminal_ws_url("ab") == "ws://localhost:8888/terminals/websocket/ab"
+
+
+# --------------------------------------------------------------------------- #
+# Cleartext-token guard + the _allow_http_localhost loopback escape hatch.
+# --------------------------------------------------------------------------- #
+def test_http_token_refused_by_default():
+    # A token over plain http:// is refused regardless of host.
+    with pytest.raises(AuthError):
+        Api("http://example.com:8888", "secret-token")
+    with pytest.raises(AuthError):
+        Api("http://127.0.0.1:8888", "secret-token")  # not opted in
+
+
+@pytest.mark.parametrize("host", ["127.0.0.1", "localhost", "[::1]"])
+def test_http_token_allowed_on_loopback_when_opted_in(host):
+    # Loopback http+token is permitted ONLY with the private opt-in. Loopback
+    # never traverses a network, so a cleartext token there cannot be sniffed.
+    api = Api(f"http://{host}:8888", "secret-token", _allow_http_localhost=True)
+    assert api.base_url == f"http://{host}:8888"
+
+
+@pytest.mark.parametrize("host", ["example.com", "10.0.0.5", "192.168.1.1", "8.8.8.8"])
+def test_http_token_still_refused_for_nonloopback_even_when_opted_in(host):
+    # The opt-in must NOT weaken the guard for a real network address: a token
+    # over http to a non-loopback host is still refused.
+    with pytest.raises(AuthError):
+        Api(f"http://{host}:8888", "secret-token", _allow_http_localhost=True)
+
+
+def test_loopback_opt_in_does_not_affect_https():
+    # https is always fine with a token, opt-in or not.
+    api = Api("https://hub.example/user/alice", "secret-token", _allow_http_localhost=True)
+    assert api.base_url == "https://hub.example/user/alice"
+
+
+# --------------------------------------------------------------------------- #
+# create_checkpoint: cheap server-side undo before a remote overwrite
+# --------------------------------------------------------------------------- #
+def test_create_checkpoint_posts_and_returns_id(monkeypatch):
+    api = _api()
+    captured = {}
+
+    def fake_urlopen(req, timeout=None, context=None):
+        captured["method"] = req.get_method()
+        captured["url"] = req.full_url
+        return _FakeResp(json.dumps({"id": "checkpoint", "last_modified": "now"}).encode())
+
+    monkeypatch.setattr(urllib.request, "urlopen", fake_urlopen)
+    cid = api.create_checkpoint("users/alice/hello.txt")
+    assert cid == "checkpoint"
+    assert captured["method"] == "POST"
+    assert captured["url"].endswith("/api/contents/users/alice/hello.txt/checkpoints")
+
+
+def test_create_checkpoint_returns_empty_when_unavailable(monkeypatch):
+    api = _api()
+
+    def fake_urlopen(req, timeout=None, context=None):
+        raise urllib.error.HTTPError(
+            req.full_url, 500, "Server Error", {}, io.BytesIO(b"no checkpoints")
+        )
+
+    monkeypatch.setattr(urllib.request, "urlopen", fake_urlopen)
+    assert api.create_checkpoint("users/alice/hello.txt") == ""
+
+
+# --------------------------------------------------------------------------- #
+# kernels: ephemeral compute sessions (POST/DELETE/GET /api/kernels)
+# --------------------------------------------------------------------------- #
+def test_kernel_ws_url_uses_wss_and_api_path():
+    # base_url has NO trailing /api
+    api = Api("https://hub.example/user/alice", token="tkn-secret-xyz")
+    url = api.kernel_ws_url("KID")
+    assert url == "wss://hub.example/user/alice/api/kernels/KID/channels"
+    assert "token" not in url  # never in the URL
+
+
+def test_create_kernel_posts_and_returns_id(monkeypatch):
+    import jp.api as apimod
+
+    class _Resp:
+        status = 201
+        headers = {"Content-Type": "application/json"}
+
+        def read(self):
+            return b'{"id":"KID","name":"python3"}'
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+    seen = {}
+
+    def fake_urlopen(req, timeout=None, context=None):
+        seen["method"] = req.get_method()
+        seen["url"] = req.full_url
+        return _Resp()
+
+    monkeypatch.setattr(apimod.urllib.request, "urlopen", fake_urlopen)
+
+    api = Api("https://hub.example/user/alice", token="tkn-secret-xyz")  # NO trailing /api
+    assert api.create_kernel() == "KID"
+    assert seen["method"] == "POST"
+    assert seen["url"] == "https://hub.example/user/alice/api/kernels"  # exact, single /api

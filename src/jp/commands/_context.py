@@ -65,16 +65,37 @@ def choose_credential(args: object, root: Path | None = None) -> str:
     matching credential is used silently, and several trigger an interactive
     picker (or, in a non-interactive shell, an error asking for ``--credential``).
     """
+    return resolve_credential(
+        credential=getattr(args, "credential", "") or "",
+        token_path=getattr(args, "token_path", "") or "",
+        root=root,
+        url=getattr(args, "url", "") or "",
+    )
+
+
+def resolve_credential(
+    *, credential: str = "", token_path: str = "", root: Path | None = None, url: str = ""
+) -> str:
+    """Resolve which saved credential to use, from explicit values.
+
+    This is the credential-selection core shared by :func:`choose_credential`
+    (which adapts an argparse-style object) and :func:`config_from_url`. The
+    resolution rules are identical: an explicit ``token_path`` bypasses the
+    credential system; an explicit ``credential`` is validated against what
+    exists; otherwise zero credentials is an error, exactly one is used
+    silently, and several trigger an interactive picker (or, non-interactively,
+    an error asking for ``--credential``).
+    """
     import os
 
     from .. import credentials, tui, urls
     from ..errors import AuthError, UsageError
 
     # An explicit token path bypasses the credential system entirely.
-    if getattr(args, "token_path", ""):
+    if token_path:
         return ""
 
-    requested = (getattr(args, "credential", "") or "").strip()
+    requested = (credential or "").strip()
     available = credentials.list_credentials(root=root)
 
     if requested:
@@ -90,8 +111,7 @@ def choose_credential(args: object, root: Path | None = None) -> str:
 
     # Narrow the candidate pool to the URL's origin when we have one. An empty
     # site means "no filter". If the site matched nothing, fall back to all.
-    target_url = (getattr(args, "url", "") or "").strip()
-    site = urls.origin_of(target_url) if target_url else ""
+    site = urls.origin_of(url.strip()) if url and url.strip() else ""
     pool = credentials.list_for_site(site, root) if site else available
     if site and not pool:
         pool = available
@@ -123,4 +143,37 @@ def choose_credential(args: object, root: Path | None = None) -> str:
     names = ", ".join(c.name for c in pool)
     raise UsageError(
         f"multiple saved credentials; choose one with --credential NAME (one of: {names})"
+    )
+
+
+def config_from_url(url: str, *, credential: str = "", token_path: str = "") -> Config:
+    """Build an in-memory :class:`Config` from a Jupyter URL + a credential.
+
+    This is the workspace-free path shared by ``jp live <URL>`` and
+    ``jp terminal <URL>``: it parses the URL into ``(base_url, prefix)``, resolves
+    a credential exactly like :func:`choose_credential`, and returns a ``Config``
+    held only in memory. Nothing is written to disk -- no ``.jp/`` workspace is
+    created.
+
+    - ``url`` is parsed with :func:`urls.parse_clone_url` and the prefix is
+      validated with :func:`paths.validate_prefix` (so the shared/too-broad and
+      empty-prefix refusals still apply).
+    - ``credential`` / ``token_path`` follow the same rules as
+      :func:`choose_credential`: an explicit ``token_path`` bypasses credentials;
+      an explicit ``credential`` is validated; otherwise one is picked (silently
+      if unique, interactively if several, error if none).
+    """
+    from ..paths import validate_prefix
+    from ..urls import parse_clone_url
+
+    base_url, raw_prefix = parse_clone_url(url)
+    prefix = validate_prefix(raw_prefix)
+    # Credential resolution is workspace-free here: there is no .jp/ root, so only
+    # global credentials are in scope (root=None), matching clone/init at setup.
+    name = resolve_credential(credential=credential, token_path=token_path, root=None, url=url)
+    return Config(
+        base_url=base_url,
+        prefix=prefix,
+        token_path=token_path,
+        credential=name,
     )

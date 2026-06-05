@@ -27,10 +27,28 @@ from jp._ws import (
     OP_TEXT,
     WebSocket,
     accept_key,
+    build_handshake_request,
     encode_frame,
     mask,
     parse_frame,
 )
+
+
+def test_connect_sends_subprotocol_header():
+    req = build_handshake_request(
+        "/api/kernels/abc/channels",
+        "host:443",
+        "KEY==",
+        headers={"Authorization": "token t"},
+        subprotocol="v1.kernel.websocket.jupyter.org",
+    )
+    assert "Sec-WebSocket-Protocol: v1.kernel.websocket.jupyter.org" in req
+    assert "Authorization: token t" in req
+
+
+def test_connect_omits_subprotocol_header_by_default():
+    req = build_handshake_request("/terminals/websocket/1", "host", "KEY==")
+    assert "Sec-WebSocket-Protocol" not in req
 
 
 # --------------------------------------------------------------------------- #
@@ -201,3 +219,26 @@ def test_send_text_masks_and_roundtrips():
     assert payload.decode() == '["stdin","ls\\n"]'
     # Masked: the 4-byte key sits right after the 2-byte header.
     assert sock.sent[1] & 0x80  # MASK bit set on a client frame
+
+
+class _CaptureSock:
+    """Fake socket that records everything sent."""
+
+    def __init__(self):
+        self.sent = bytearray()
+
+    def sendall(self, data):
+        self.sent += data
+
+
+def test_send_binary_emits_masked_binary_frame():
+    sock = _CaptureSock()
+    ws = WebSocket(sock)
+    ws.send_binary(b"\x00\x01\xfe\xff")
+    parsed = parse_frame(sock.sent)
+    assert parsed is not None
+    fin, opcode, payload, consumed = parsed
+    assert fin is True
+    assert opcode == OP_BINARY
+    assert payload == b"\x00\x01\xfe\xff"  # parse_frame unmasks client frames
+    assert consumed == len(sock.sent)

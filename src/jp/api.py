@@ -34,6 +34,7 @@ invoking any mutating method here (put/mkdir/rename/delete).
 from __future__ import annotations
 
 import base64
+import ipaddress
 import json
 import ssl
 import urllib.error
@@ -124,6 +125,23 @@ def _looks_utf8_text(data: bytes) -> bool:
     return True
 
 
+def _is_loopback_host(host: str | None) -> bool:
+    """True only for the loopback interface (``localhost`` or a 127/8 / ::1 IP).
+
+    Used to permit a token over plain ``http://`` for a strictly local server.
+    Anything that is not provably loopback (including a missing host) is False,
+    so the cleartext-token guard stays in force for every real network address.
+    """
+    if not host:
+        return False
+    if host.lower() == "localhost":
+        return True
+    try:
+        return ipaddress.ip_address(host).is_loopback
+    except ValueError:
+        return False
+
+
 class Api:
     """Contents API client. One instance per repo/session."""
 
@@ -135,6 +153,7 @@ class Api:
         timeout: float = _DEFAULT_TIMEOUT,
         ssl_context: ssl.SSLContext | None = None,
         large_file_warn_bytes: int = _LARGE_FILE_WARN_BYTES,
+        _allow_http_localhost: bool = False,
     ) -> None:
         self.base_url = base_url.rstrip("/")
         self._token = token
@@ -142,15 +161,28 @@ class Api:
         self.large_file_warn_bytes = large_file_warn_bytes
         self._warned_large: set[str] = set()
         # Always a verifying context. We never pass an unverified one.
-        self._ssl_context = ssl_context or ssl.create_default_context()
+        if ssl_context is None:
+            ssl_context = ssl.create_default_context()
+            # Require TLS 1.2+ (a default context still permits broken 1.0/1.1).
+            ssl_context.minimum_version = ssl.TLSVersion.TLSv1_2
+        self._ssl_context = ssl_context
         ui.register_secret(token)
 
-        scheme = urllib.parse.urlsplit(self.base_url).scheme
+        split = urllib.parse.urlsplit(self.base_url)
+        scheme = split.scheme
         if scheme not in ("http", "https"):
             raise NetworkError(f"unsupported base_url scheme: {scheme!r}")
         if scheme == "http" and token:
-            # Never transmit credentials over cleartext.
-            raise AuthError("refusing to send a token over plain http:// -- use https://")
+            # Never transmit credentials over cleartext -- UNLESS the host is the
+            # loopback interface AND the caller explicitly opted in. Loopback
+            # traffic never leaves the machine (no network to sniff), so a token
+            # over http://127.0.0.1 is genuinely safe; this exists solely so a
+            # local throwaway jupyter_server can be exercised in tests. The guard
+            # is private (leading underscore) and refuses any non-loopback host.
+            if _allow_http_localhost and _is_loopback_host(split.hostname):
+                pass
+            else:
+                raise AuthError("refusing to send a token over plain http:// -- use https://")
 
     # --- low-level request --------------------------------------------------
     def _url(self, api_path: str) -> str:
@@ -503,6 +535,22 @@ class Api:
                 ) from exc
             raise
 
+    def create_checkpoint(self, api_path: str) -> str:
+        """POST a server-side checkpoint of a file (cheap undo before overwrite).
+
+        Research §3.6: 1 checkpoint per file (id 'checkpoint'); restore reverts.
+        NOTE: this is a building block and is NOT yet wired into the live write
+        path -- `jp live --writable` does not call it, so writable overwrites have
+        no automatic undo. Returns the checkpoint id (or '' if unavailable).
+        """
+        try:
+            data = self._request("POST", f"api/contents/{api_path}/checkpoints")
+        except ApiError:
+            return ""
+        if isinstance(data, dict) and data.get("id"):
+            return str(data["id"])
+        return ""
+
     # --- health probe -------------------------------------------------------
     def status_probe(self) -> StatusResult:
         """Probe ``GET /api/status`` WITHOUT following redirects.
@@ -610,6 +658,54 @@ class Api:
         if isinstance(data, dict) and data.get("name"):
             return str(data["name"])
         raise ApiError("server did not return a terminal name")
+
+    # --- kernels (ephemeral compute; used by `jp live`) ---------------------
+    def create_kernel(self, name: str = "python3") -> str:
+        """Start a kernel via ``POST /api/kernels``; return its id.
+
+        Like terminals, a kernel is not a path -- the path-jail does not apply
+        to its lifecycle. jp tracks the returned id and deletes ONLY that id.
+        """
+        data = self._request("POST", "api/kernels", body={"name": name})
+        if isinstance(data, dict) and data.get("id"):
+            return str(data["id"])
+        raise ApiError("server did not return a kernel id")
+
+    def kernel_alive(self, kernel_id: str) -> bool:
+        """True if ``GET /api/kernels/<id>`` is 200; False on 404."""
+        try:
+            self._request("GET", f"api/kernels/{kernel_id}")
+            return True
+        except ApiError as exc:
+            if exc.status == 404:
+                return False
+            raise
+
+    def delete_kernel(self, kernel_id: str) -> None:
+        """Delete a kernel by id (idempotent: 404 tolerated). Frees the GPU."""
+        try:
+            self._request("DELETE", f"api/kernels/{kernel_id}")
+        except ApiError as exc:
+            if exc.status == 404:
+                return
+            raise
+
+    def kernel_ws_url(self, kernel_id: str) -> str:
+        """Derive ``wss://.../api/kernels/<id>/channels``. Token never in URL.
+
+        ``base_url`` is the single-user server root WITHOUT a trailing ``/api``
+        (same convention as ``terminal_ws_url``). We swap the scheme and
+        prepend the ``api/`` segment explicitly so the websocket path is
+        correct on the real server.
+        """
+        server = self.base_url
+        if server.startswith("https://"):
+            ws_base = "wss://" + server[len("https://") :]
+        elif server.startswith("http://"):
+            ws_base = "ws://" + server[len("http://") :]
+        else:
+            raise NetworkError(f"unsupported base_url scheme for websocket: {server!r}")
+        return f"{ws_base.rstrip('/')}/api/kernels/{kernel_id}/channels"
 
     # --- helpers ------------------------------------------------------------
     @staticmethod

@@ -122,6 +122,55 @@ def test_confirm_empty_returns_empty():
     assert tui.confirm_deletions([], "remote") == []
 
 
+# --- select_access (mount writable/read-only + remember) ------------------
+_MOUNT = "privado/jp-live-test -> ~/Downloads/test/jp-live-test"
+
+
+def test_access_down_then_enter_picks_readonly():
+    # Move from Writable to Read-only, confirm without remembering.
+    res = tui.select_access(_MOUNT, default_writable=True, _reader=FakeReader(["down", "enter"]))
+    assert res == (False, False)
+
+
+def test_access_enter_immediately_keeps_writable_default():
+    res = tui.select_access(_MOUNT, default_writable=True, _reader=FakeReader(["enter"]))
+    assert res == (True, False)
+
+
+def test_access_space_then_enter_remembers():
+    res = tui.select_access(_MOUNT, default_writable=True, _reader=FakeReader(["space", "enter"]))
+    assert res == (True, True)
+
+
+def test_access_default_readonly_start():
+    # Highlight starts on Read-only when default_writable is False.
+    res = tui.select_access(_MOUNT, default_writable=False, _reader=FakeReader(["enter"]))
+    assert res == (False, False)
+
+
+def test_access_esc_cancels():
+    assert tui.select_access(_MOUNT, _reader=FakeReader(["esc"])) is None
+
+
+def test_access_q_cancels():
+    assert tui.select_access(_MOUNT, _reader=FakeReader(["q"])) is None
+
+
+def test_access_renders_title_and_labels(capsys):
+    tui.select_access(_MOUNT, _reader=FakeReader(["enter"]))
+    out = capsys.readouterr().out
+    assert _MOUNT in out
+    assert "Writable" in out
+    assert "Read-only" in out
+    assert "Remember my choice" in out
+
+
+def test_access_requires_terminal_without_reader(monkeypatch):
+    monkeypatch.setattr(tui, "interactive", lambda *a, **k: False)
+    with pytest.raises(RuntimeError):
+        tui.select_access(_MOUNT)
+
+
 # --- select_one / select_one_remember ------------------------------------
 
 
