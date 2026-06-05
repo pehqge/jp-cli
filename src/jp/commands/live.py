@@ -197,12 +197,12 @@ def _live(args: argparse.Namespace) -> int:
         if not rfs.ping():
             raise SafetyError("the remote file agent did not respond to ping; aborting.")
 
-        # C4: list the top of the folder, then fold the write/read choice into a
-        # single confirmation. --read-only forces read-only and skips; --yes
-        # assumes writable and skips; a non-tty without --yes is refused.
+        # C4: the write/read confirmation (the selector names the exact target).
+        # --read-only forces read-only and skips; --yes assumes writable and
+        # skips; a saved default skips; a non-tty without --yes is refused.
         leaf = _prefix_leaf(prefix)
         display = _planned_display(args, leaf)
-        writable = _confirm_writable(args, rfs, prefix=prefix, display=display, writable=writable)
+        writable = _confirm_writable(args, prefix=prefix, display=display, writable=writable)
         return _serve(args, rfs, prefix=prefix, writable=writable, leaf=leaf, url=url, cfg=cfg)
     finally:
         with _swallow():
@@ -244,7 +244,6 @@ def _used_drive_letters() -> set[str] | None:
 
 def _confirm_writable(
     args: argparse.Namespace,
-    rfs,
     *,
     prefix: str,
     display: str,
@@ -253,16 +252,9 @@ def _confirm_writable(
     """C4 confirmation. Returns the resolved writable flag (or aborts/raises).
 
     The single prompt uses the per-OS display handle, never a hardcoded path.
+    The selector title already names the exact prefix + target, so we do not
+    pre-list the folder contents (the mount itself shows them).
     """
-    entries = rfs.listdir("")
-    ui.heading(f"top of {prefix!r}:")
-    if entries:
-        ui.bullets(
-            f"{e.name}{'/' if getattr(e, 'type', '') == 'directory' else ''}" for e in entries
-        )
-    else:
-        ui.out("  (empty)")
-
     # Explicit per-run flags win over everything.
     if getattr(args, "read_only", False):
         return False
