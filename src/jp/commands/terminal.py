@@ -35,7 +35,7 @@ from .. import paths, ui
 from .._ws import WebSocket, WebSocketError
 from ..errors import EXIT_OK, NetworkError, UsageError
 from . import _context
-from ._context import RepoContext, load_repo
+from ._context import load_repo
 
 # Local escape: Ctrl-] (telnet convention, 0x1d). Forces a disconnect even if the
 # remote shell is wedged. Chosen over ":q" (collides with vim/less) because it is
@@ -57,6 +57,22 @@ def add_parser(subparsers: argparse._SubParsersAction) -> None:
     p = subparsers.add_parser(
         "terminal",
         help="open the remote machine's shell in this terminal",
+    )
+    p.add_argument(
+        "url",
+        nargs="?",
+        default="",
+        help=(
+            "optional Jupyter folder URL (same forms as 'jp clone'). "
+            "Given a URL, run workspace-free from any directory; "
+            "omit it to use the current jp workspace."
+        ),
+    )
+    p.add_argument(
+        "--credential",
+        default="",
+        metavar="NAME",
+        help="saved credential to use with a URL (else the single one, or an interactive picker)",
     )
     p.add_argument(
         "--no-cd",
@@ -116,16 +132,23 @@ def cd_command(prefix: str) -> str:
 # Command entry point
 # --------------------------------------------------------------------------- #
 def run(args: argparse.Namespace) -> int:
-    ctx = load_repo()
+    # A URL makes the command workspace-free: build an in-memory Config from it
+    # (resolving the credential) instead of loading a .jp/ workspace. With no URL
+    # the behavior is exactly as before -- load_repo() from the current workspace.
+    url = getattr(args, "url", "") or ""
+    if url:
+        cfg = _context.config_from_url(url, credential=getattr(args, "credential", "") or "")
+    else:
+        cfg = load_repo().cfg
 
     if not _HAS_PTY:
-        return _browser_fallback(args, ctx)
+        return _browser_fallback(args, cfg)
 
     if not (sys.stdin.isatty() and sys.stdout.isatty()):
         raise UsageError("jp terminal needs an interactive terminal (a tty).")
 
-    api = _context.build_api(ctx.cfg)
-    prefix = paths.validate_prefix(ctx.cfg.prefix)
+    api = _context.build_api(cfg)
+    prefix = paths.validate_prefix(cfg.prefix)
 
     if not args.yes and not _confirm():
         ui.info("aborted")
@@ -140,13 +163,13 @@ def run(args: argparse.Namespace) -> int:
     name = session.name
 
     try:
-        token = config_mod.load_token(ctx.cfg)
-        url = api.terminal_ws_url(name)
+        token = config_mod.load_token(cfg)
+        ws_url = api.terminal_ws_url(name)
         try:
             ws = WebSocket.connect(
-                url,
+                ws_url,
                 headers={"Authorization": f"token {token}"},
-                timeout=ctx.cfg.timeout,
+                timeout=cfg.timeout,
             )
         except WebSocketError as exc:
             raise NetworkError(f"could not open the terminal websocket: {exc}") from exc
@@ -268,7 +291,7 @@ def _send_winsize(ws: WebSocket, fd: int) -> None:
 # --------------------------------------------------------------------------- #
 # Windows fallback: open the Jupyter web UI (no termios -> no raw PTY)
 # --------------------------------------------------------------------------- #
-def _browser_fallback(args: argparse.Namespace, ctx: RepoContext) -> int:
+def _browser_fallback(args: argparse.Namespace, cfg: config_mod.Config) -> int:
     import webbrowser
 
     from . import kernel
@@ -284,7 +307,7 @@ def _browser_fallback(args: argparse.Namespace, ctx: RepoContext) -> int:
             ui.info("aborted")
             return EXIT_OK
 
-    token = config_mod.load_token(ctx.cfg)
-    url = kernel.connection_url(ctx.cfg.base_url, token)
+    token = config_mod.load_token(cfg)
+    url = kernel.connection_url(cfg.base_url, token)
     webbrowser.open(url)
     return EXIT_OK

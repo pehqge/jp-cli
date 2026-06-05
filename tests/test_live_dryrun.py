@@ -4,13 +4,29 @@ from jp.commands import live
 from jp.errors import EXIT_OK
 
 
+def _dry_args(**over):
+    base = {
+        "url": None,
+        "read_only": False,
+        "credential": None,
+        "code": False,
+        "yes": False,
+        "mount": None,
+        "dry_run": True,
+        "root": None,
+        "stats": False,
+        "print_agent": False,
+    }
+    base.update(over)
+    return argparse.Namespace(**base)
+
+
 def test_dry_run_reports_success(tmp_path, capsys):
     (tmp_path / "notebook.ipynb").write_bytes(b'{"cells": []}')
     (tmp_path / "data").mkdir()
     (tmp_path / "data" / "x.csv").write_bytes(b"a,b\n1,2\n")
 
-    args = argparse.Namespace(dry_run=True, root=str(tmp_path), live=False)
-    rc = live.run(args)
+    rc = live.run(_dry_args(root=str(tmp_path)))
     out = capsys.readouterr().out
     assert rc == EXIT_OK
     assert "ping: ok" in out
@@ -19,33 +35,43 @@ def test_dry_run_reports_success(tmp_path, capsys):
     assert "bytes verified" in out
 
 
-def test_no_mode_raises_usage_error(tmp_path):
+def test_no_url_outside_workspace_raises_usage_error(tmp_path, monkeypatch):
     import pytest
 
     from jp.errors import UsageError
 
-    # Neither --dry-run nor --live nor --print-agent -> usage error.
-    args = argparse.Namespace(dry_run=False, root=None, live=False, print_agent=False)
+    # Neither --dry-run nor --print-agent, and no URL -> usage error (after the
+    # workspace guard passes because cwd is a plain dir).
+    monkeypatch.chdir(tmp_path)
+    args = _dry_args(dry_run=False)
     with pytest.raises(UsageError):
         live.run(args)
 
 
 def test_dry_run_stats_prints_machine(tmp_path, capsys):
-    args = argparse.Namespace(dry_run=True, root=str(tmp_path), live=False, stats=True)
-    rc = live.run(args)
+    rc = live.run(_dry_args(root=str(tmp_path), stats=True))
     out = capsys.readouterr().out
     assert rc == EXIT_OK
     assert "CPU" in out or "cpu" in out
 
 
-def test_dry_run_writable_flag_does_not_block(tmp_path, capsys):
+def test_dry_run_writable_is_default_and_does_not_block(tmp_path, capsys):
     (tmp_path / "f.txt").write_bytes(b"hi")
-    args = argparse.Namespace(dry_run=True, root=str(tmp_path), live=False, writable=True)
-    rc = live.run(args)
+    # Writable is now the default in dry-run too; --read-only opts out. With a
+    # non-tty stdin the writable dry-run proceeds without blocking on input().
+    rc = live.run(_dry_args(root=str(tmp_path)))
     out = capsys.readouterr().out
     assert rc == EXIT_OK
     # Warns that writes will reach the (simulated) remote, and does NOT block.
     assert "writ" in out.lower()
+
+
+def test_dry_run_read_only_skips_writable_warning(tmp_path, capsys):
+    (tmp_path / "f.txt").write_bytes(b"hi")
+    rc = live.run(_dry_args(root=str(tmp_path), read_only=True))
+    out = capsys.readouterr().out
+    assert rc == EXIT_OK
+    assert "WRITABLE mode" not in out
 
 
 def test_live_writable_warning_makes_no_checkpoint_promise():
@@ -62,7 +88,7 @@ def test_live_writable_warning_makes_no_checkpoint_promise():
 
 def test_dry_run_with_mount_prints_mount_command(tmp_path, capsys):
     (tmp_path / "f.txt").write_bytes(b"hi")
-    args = argparse.Namespace(dry_run=True, root=str(tmp_path), live=False, mount="/tmp/jpmnt")
+    args = _dry_args(root=str(tmp_path), mount="/tmp/jpmnt")
     rc = live.run(args)
     out = capsys.readouterr().out
     assert rc == 0
