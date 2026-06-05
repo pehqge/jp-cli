@@ -24,8 +24,10 @@ Only that one temp file is ever created and removed -- no directory is touched -
 so concurrent ``jp run`` invocations never clash and your files are never
 overwritten (128-bit random name + a remote existence pre-check).
 
-Workspace-only (no URL mode). POSIX terminal today (macOS + Linux); Windows
-support arrives with the ``jp terminal`` Windows fix.
+Workspace-only (no URL mode). Works on macOS, Linux and Windows: the raw local
+proxy uses termios on POSIX and the virtual-terminal console modes on Windows
+(both via :mod:`jp.pty`). A non-tty stdout (piped output) streams without raw
+mode on every platform.
 """
 
 from __future__ import annotations
@@ -230,11 +232,12 @@ def run(args: argparse.Namespace) -> int:
         ui.out(source)
         return EXIT_OK
 
-    if not pty.HAS_PTY:
-        raise UsageError(
-            "jp run needs a POSIX terminal; Windows support arrives with the jp terminal fix."
-        )
-    interactive = sys.stdin.isatty() and sys.stdout.isatty()
+    # Interactive (raw local input for the program's input()) needs a real
+    # terminal: POSIX termios, or a Windows console new enough for VT modes.
+    # Without it we still stream output (pump_noninteractive); input() just has
+    # no local stdin (e.g. piped output, or a pre-Win10-1511 console).
+    is_tty = sys.stdin.isatty() and sys.stdout.isatty()
+    interactive = is_tty and (pty.HAS_PTY or pty.windows_console_supported())
 
     api = _context.build_api(ctx.cfg)
     if api.stat(remote_cwd) is None:
@@ -286,7 +289,7 @@ def run(args: argparse.Namespace) -> int:
                 scanner = pty.RunScanner(token, clear_seq=clear_seq)
                 initial = [pty.stdin_message((command + "\n").encode("utf-8"))]
                 if interactive:
-                    rc = pty.drive_pty(ws, initial=initial, scanner=scanner)
+                    rc = pty.drive(ws, initial=initial, scanner=scanner)
                 else:
                     rc = pty.pump_noninteractive(ws, initial=initial, scanner=scanner)
             finally:

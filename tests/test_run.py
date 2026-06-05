@@ -306,11 +306,13 @@ def test_run_noninteractive_streams(monkeypatch, tmp_path):
     assert api.deleted_terminals == ["3"] and api.deleted_files == api.put
 
 
-def test_run_windows_errors(monkeypatch, tmp_path):
-    (tmp_path / "a.py").write_text("x\n")
+def test_run_windows_streams(monkeypatch, tmp_path):
+    # jp run no longer hard-blocks on Windows (no termios): a non-tty / VT-less
+    # console streams via pump_noninteractive; a VT console uses pty.drive.
+    (tmp_path / "a.py").write_text("print(1)\n")
     api = _FakeApi(TerminalSession(name="1", cwd_applied=True))
-    _wire(monkeypatch, tmp_path, api=api, ws=_FakeWS())
+    _wire(monkeypatch, tmp_path, api=api, ws=_FakeWS(), isatty=False)
     monkeypatch.setattr(run.pty, "HAS_PTY", False)
-    with pytest.raises(UsageError, match="POSIX"):
-        run.run(_args("a.py"))
-    assert api.put == []
+    rc = run.run(_args("a.py"))
+    assert rc == 0
+    assert api.put != []  # the source WAS uploaded -- no Windows block anymore

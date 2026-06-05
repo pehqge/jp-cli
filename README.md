@@ -236,8 +236,8 @@ and your files are never overwritten. For Python, `sys.argv[0]`/`__file__`/
 tracebacks show the real name, not the temp file. You see only the program's
 output, streamed live — no remote shell prompt, and `input()` works just like
 locally. Any **data** files the script opens must already exist on the remote
-(`jp push` those first). POSIX only for now (macOS + Linux); Windows support lands
-with the `jp terminal` Windows fix.
+(`jp push` those first). Works on macOS, Linux and Windows (the interactive raw
+proxy uses the same `jp.pty` backend as `jp terminal`).
 
 ---
 
@@ -261,7 +261,7 @@ with the `jp terminal` Windows fix.
 | `jp rm <path>` | Delete on the remote — gated, dry-run + typed confirmation. The only deleter. |
 | `jp kernel` | Set up a VS Code remote kernel to run notebooks in the right directory ([guide](docs/vscode-remote-cwd.md)). |
 | `jp terminal [url]` | Open the remote machine's shell in your terminal, in the workspace folder. With a `<url>` it works standalone (no workspace needed). Creates/deletes only an ephemeral terminal session; touches no files. |
-| `jp run <file> [args…]` | Run a local script on the remote in the current mapped folder, without pushing it. Interpreter from shebang/extension or `--as`; `--dry-run` to preview. Propagates the exit code. POSIX only. |
+| `jp run <file> [args…]` | Run a local script on the remote in the current mapped folder, without pushing it. Interpreter from shebang/extension or `--as`; `--dry-run` to preview. Propagates the exit code. macOS/Linux/Windows. |
 | `jp doctor` | Diagnose token, connectivity, server status. |
 | `jp update` | Update jp to the latest version. |
 | `jp changelog` | Show release notes (newer releases, a specific version, or `--all`). |

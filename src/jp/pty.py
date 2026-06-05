@@ -24,6 +24,7 @@ import re
 import select
 import signal
 import sys
+import threading
 
 ESCAPE = 0x1D  # Ctrl-]: force-disconnect even if the remote is wedged.
 
@@ -256,3 +257,137 @@ def _loop(ws, stdin_fd: int, stdout_fd: int, wakeup_fd: int, scanner: RunScanner
             ws.send_text(stdin_message(data))
         if ws.fileno() in readable and _pump(ws, stdout_fd, scanner):
             break
+
+
+# --------------------------------------------------------------------------- #
+# Windows console backend (no termios): drive the virtual-terminal console modes
+# via ctypes and proxy with two threads (the console input handle is not
+# select-able). Used by BOTH jp terminal and jp run -- the same _pump/scanner
+# path, so jp run's output looks identical to a local run on Windows too.
+# Flag values are from Microsoft's SetConsoleMode docs.
+# --------------------------------------------------------------------------- #
+_ENABLE_PROCESSED_INPUT = 0x0001
+_ENABLE_LINE_INPUT = 0x0002
+_ENABLE_ECHO_INPUT = 0x0004
+_ENABLE_VIRTUAL_TERMINAL_INPUT = 0x0200
+_ENABLE_PROCESSED_OUTPUT = 0x0001
+_ENABLE_VIRTUAL_TERMINAL_PROCESSING = 0x0004
+_STD_INPUT_HANDLE = -10
+_STD_OUTPUT_HANDLE = -11
+_CP_UTF8 = 65001
+
+
+def raw_console_input_mode(old: int) -> int:
+    """Raw input: char-at-a-time, no echo, Ctrl-C forwarded, keys as VT seqs."""
+    cooked = _ENABLE_LINE_INPUT | _ENABLE_ECHO_INPUT | _ENABLE_PROCESSED_INPUT
+    return (old & ~cooked) | _ENABLE_VIRTUAL_TERMINAL_INPUT
+
+
+def vt_console_output_mode(old: int) -> int:
+    """Output: render the server's ANSI/VT escape sequences in place."""
+    return old | _ENABLE_PROCESSED_OUTPUT | _ENABLE_VIRTUAL_TERMINAL_PROCESSING
+
+
+def windows_console_supported() -> bool:
+    """True if VT processing can be enabled on this console (Windows 10 1511+)."""
+    try:
+        import ctypes
+
+        k = ctypes.windll.kernel32  # type: ignore[attr-defined]
+        h = k.GetStdHandle(_STD_OUTPUT_HANDLE)
+        mode = ctypes.c_uint32()
+        if not k.GetConsoleMode(h, ctypes.byref(mode)):
+            return False
+        if not k.SetConsoleMode(h, vt_console_output_mode(mode.value)):
+            return False
+        k.SetConsoleMode(h, mode.value)  # restore immediately
+        return True
+    except Exception:
+        return False
+
+
+def _console_size(fd: int) -> tuple[int, int]:
+    """(cols, rows) of the console, defaulting to (80, 24)."""
+    try:
+        s = os.get_terminal_size(fd)
+        return (s.columns, s.lines)
+    except OSError:
+        return (80, 24)
+
+
+def drive_pty_windows(
+    ws, *, initial: list[str] | None = None, scanner: RunScanner | None = None
+) -> int | None:
+    """Windows counterpart of :func:`drive_pty` (no termios).
+
+    Same contract: send each ``initial`` message, then proxy stdin<->ws until
+    exit, running output through ``_pump`` (so a ``scanner`` strips jp run's
+    chrome exactly like on POSIX). Output runs on this (main) thread so a remote
+    close ends cleanly; a daemon thread forwards keystrokes and closes the ws on
+    Ctrl-D (EOF) or the Ctrl-] escape. Console modes/code pages are restored.
+    """
+    import ctypes
+
+    k = ctypes.windll.kernel32  # type: ignore[attr-defined]
+    hin = k.GetStdHandle(_STD_INPUT_HANDLE)
+    hout = k.GetStdHandle(_STD_OUTPUT_HANDLE)
+    in_mode = ctypes.c_uint32()
+    out_mode = ctypes.c_uint32()
+    k.GetConsoleMode(hin, ctypes.byref(in_mode))
+    k.GetConsoleMode(hout, ctypes.byref(out_mode))
+    old_in_cp = k.GetConsoleCP()
+    old_out_cp = k.GetConsoleOutputCP()
+
+    stdin_fd = sys.stdin.fileno()
+    stdout_fd = sys.stdout.fileno()
+
+    k.SetConsoleMode(hin, raw_console_input_mode(in_mode.value))
+    k.SetConsoleMode(hout, vt_console_output_mode(out_mode.value))
+    k.SetConsoleCP(_CP_UTF8)
+    k.SetConsoleOutputCP(_CP_UTF8)
+
+    def _feed_input() -> None:
+        while not ws.closed:
+            try:
+                data = os.read(stdin_fd, 65536)
+            except OSError:
+                data = b""
+            if not data or ESCAPE in data:
+                with contextlib.suppress(Exception):
+                    ws.close()  # unblock the output loop -> clean exit
+                return
+            with contextlib.suppress(Exception):
+                ws.send_text(stdin_message(data))
+
+    reader = threading.Thread(target=_feed_input, name="jp-pty-in", daemon=True)
+    try:
+        send_winsize(ws, stdout_fd)
+        for msg in initial or []:
+            ws.send_text(msg)
+        last_size = _console_size(stdout_fd)
+        reader.start()
+        while not ws.closed:
+            try:
+                readable, _, _ = select.select([ws.fileno()], [], [], 0.2)
+            except OSError:
+                break
+            if readable and _pump(ws, stdout_fd, scanner):
+                break
+            size = _console_size(stdout_fd)
+            if size != last_size:
+                last_size = size
+                with contextlib.suppress(Exception):
+                    ws.send_text(setsize_message(size[1], size[0]))
+    finally:
+        k.SetConsoleMode(hin, in_mode.value)
+        k.SetConsoleMode(hout, out_mode.value)
+        k.SetConsoleCP(old_in_cp)
+        k.SetConsoleOutputCP(old_out_cp)
+    return scanner.exit_code if scanner is not None else None
+
+
+def drive(ws, *, initial: list[str] | None = None, scanner: RunScanner | None = None) -> int | None:
+    """Raw-mode interactive proxy, choosing the POSIX or Windows backend."""
+    if HAS_PTY:
+        return drive_pty(ws, initial=initial, scanner=scanner)
+    return drive_pty_windows(ws, initial=initial, scanner=scanner)
