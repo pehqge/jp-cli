@@ -5,6 +5,18 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.0](https://github.com/pehqge/jpsync/compare/v1.2.0...v1.3.0) (2026-06-05)
+
+
+### Features
+
+* **live:** jp live — mount your remote Jupyter folder locally, edit + run over the kernel ([#26](https://github.com/pehqge/jpsync/issues/26)) ([5c14b23](https://github.com/pehqge/jpsync/commit/5c14b23810bf646a933c72dc24a757424ed961dc))
+
+
+### Bug Fixes
+
+* AI release-notes gh bug + config works outside a workspace ([#27](https://github.com/pehqge/jpsync/issues/27)) ([9c9c963](https://github.com/pehqge/jpsync/commit/9c9c9637aeea8d2ed08a105b6d7301960af1d09c))
+
 ## [1.2.0](https://github.com/pehqge/jpsync/compare/v1.1.1...v1.2.0) (2026-06-05)
 
 
