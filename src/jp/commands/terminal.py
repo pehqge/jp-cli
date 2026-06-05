@@ -174,6 +174,7 @@ def run(args: argparse.Namespace) -> int:
         except WebSocketError as exc:
             raise NetworkError(f"could not open the terminal websocket: {exc}") from exc
         try:
+            ui.info("connected -- press Ctrl-D (or type 'exit') to close the remote shell.")
             do_cd = cwd is not None and not session.cwd_applied
             _run_pty(ws, prefix=prefix, do_cd=do_cd)
         finally:
