@@ -206,6 +206,7 @@ the session is cleaned up when you exit. See the
 | `jp pull` | Download remote changes. Additive by default. |
 | `jp diff [path]` | Show file-level differences. |
 | `jp ls [remote-path]` | List a remote directory (no local writes). |
+| `jp open` | Open this workspace's folder (or the subfolder you're in) in the Jupyter web UI. Confirms first, shows the URL, and can copy instead of opening. Refuses folders jp never syncs (`.jp/`, hidden dot-names, `.jpignore` matches) since they aren't on the remote. Press `r` in the prompt to remember your choice (skip it next time); `jp open --ask` forgets it. Token-free URL; no network. |
 | `jp config` | Interactive settings editor (see below). Also `config get/set/list`. |
 | `jp ignore [pattern]` | Manage `.jpignore` patterns. |
 | `jp rm <path>` | Delete on the remote — gated, dry-run + typed confirmation. The only deleter. |

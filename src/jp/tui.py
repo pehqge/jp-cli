@@ -413,15 +413,20 @@ def settings_menu(
 # --------------------------------------------------------------------------- #
 
 
-def select_one(labels: Sequence[str], title: str = "", _reader: object | None = None) -> int | None:
-    """Let the user pick one item from ``labels``. Returns the chosen index, or
-    None on cancel (Esc).
+def _select_core(
+    items: list[str],
+    title: str,
+    controls: str,
+    accel_keys: set[str],
+    _reader: object | None,
+) -> object:
+    """Arrow-key single-select loop shared by the pickers below.
 
-    Controls: Up/Down move · Enter select · Esc cancel.
-
-    ``_reader`` is a test seam (see :func:`settings_menu`).
+    Returns the chosen index on Enter, ``None`` on cancel (Esc/q), or a
+    ``(key, idx)`` tuple when one of ``accel_keys`` is pressed on a row -- this
+    lets a caller attach a shortcut (e.g. 'r' to pick *and* remember) without a
+    second menu row. ``controls`` is the dim hint line shown under the items.
     """
-    items = list(labels)
     if not items:
         return None
     if _reader is None and not interactive():
@@ -442,7 +447,7 @@ def select_one(labels: Sequence[str], title: str = "", _reader: object | None = 
             end = RESET if i == idx else ""
             lines.append(f"{cursor}{color}{label}{end}")
         lines.append("")
-        lines.append(f"{DIM}Up/Down move · Enter select · Esc cancel{RESET}")
+        lines.append(f"{DIM}{controls}{RESET}")
         prev_lines = _render_block(lines, prev_lines)
 
     _hide_cursor()
@@ -459,8 +464,52 @@ def select_one(labels: Sequence[str], title: str = "", _reader: object | None = 
                     return idx
                 elif key in ("esc", "q", ""):
                     return None
+                elif key in accel_keys:
+                    return (key, idx)
     finally:
         _show_cursor()
+
+
+def select_one(labels: Sequence[str], title: str = "", _reader: object | None = None) -> int | None:
+    """Let the user pick one item from ``labels``. Returns the chosen index, or
+    None on cancel (Esc).
+
+    Controls: Up/Down move · Enter select · Esc cancel.
+
+    ``_reader`` is a test seam (see :func:`settings_menu`).
+    """
+    result = _select_core(
+        list(labels),
+        title,
+        "Up/Down move · Enter select · Esc cancel",
+        set(),
+        _reader,
+    )
+    # No accel keys are configured, so the core never returns a tuple here.
+    return result  # type: ignore[return-value]
+
+
+def select_one_remember(
+    labels: Sequence[str], title: str = "", _reader: object | None = None
+) -> tuple[int | None, bool]:
+    """Pick one item, with a 'remember' shortcut.
+
+    Enter picks the highlighted item for this run only; pressing ``r`` picks it
+    *and* signals that the choice should be saved (don't ask again). Returns
+    ``(index, remember)``; ``(None, False)`` on cancel.
+    """
+    result = _select_core(
+        list(labels),
+        title,
+        "Up/Down move · Enter select · r remember & skip next time · Esc cancel",
+        {"r"},
+        _reader,
+    )
+    if result is None:
+        return (None, False)
+    if isinstance(result, tuple):  # ("r", idx) -- picked with remember
+        return (result[1], True)
+    return (result, False)  # plain Enter -- pick once
 
 
 # --------------------------------------------------------------------------- #
