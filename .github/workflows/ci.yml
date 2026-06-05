@@ -75,7 +75,11 @@ jobs:
         with:
           python-version: "3.12"
       - run: python -m pip install -e ".[dev]" pip-audit
-      - run: python -m pip_audit --strict --desc
+      # --skip-editable excludes the project's own editable install. Otherwise
+      # pip-audit looks up jpsync==<just-bumped version> on PyPI, which is not
+      # published until release.yml runs afterwards, so --strict fails the
+      # release-merge build with "Dependency not found on PyPI".
+      - run: python -m pip_audit --strict --desc --skip-editable
 
   # Single required status check. Branch protection requires only this job,
   # so the test matrix can change without breaking protection or auto-merge.
