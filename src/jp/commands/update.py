@@ -204,6 +204,14 @@ def run(args: argparse.Namespace) -> int:
 
     if rc == 0:
         ui.success("update complete. Run 'jp --version' to confirm.")
+        if latest:
+            from .. import changelog as _cl
+
+            rel = _cl.release_for(latest)
+            if rel is not None:
+                ui.info("")
+                ui.heading("What's new:")
+                _cl.render(rel)
         return EXIT_OK
     ui.error("automatic update failed.")
     _reinstall_hint()

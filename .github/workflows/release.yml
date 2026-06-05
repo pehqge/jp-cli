@@ -99,6 +99,44 @@ jobs:
           files: release/*
           generate_release_notes: true
 
+  ai-release-notes:
+    name: AI release highlights
+    needs: github-release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          # Check out the tag with full history so we can diff against the
+          # previous tag (on workflow_call, github.ref is the branch).
+          ref: ${{ inputs.tag_name || github.ref_name }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6
+        with:
+          python-version: "3.12"
+      - name: Append AI-generated highlights (minor/major releases only)
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GEMINI_MODEL: ${{ vars.GEMINI_MODEL }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Pass the tag via env (never inline ${{ }}) and validate its shape
+          # before using it, per workflow-injection hardening.
+          NEW_TAG: ${{ inputs.tag_name || github.ref_name }}
+        run: |
+          set -euo pipefail
+          if ! printf '%s' "$NEW_TAG" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "Tag '$NEW_TAG' is not a vX.Y.Z release tag; skipping AI highlights."
+            exit 0
+          fi
+          PREV_TAG="$(git describe --tags --abbrev=0 "${NEW_TAG}^" 2>/dev/null || echo '')"
+          if [ -z "$PREV_TAG" ]; then
+            echo "No previous tag; skipping AI highlights."
+            exit 0
+          fi
+          python scripts/release_notes_ai.py "$PREV_TAG" "$NEW_TAG"
+
   publish-pypi:
     name: Publish to PyPI
     needs: build-python

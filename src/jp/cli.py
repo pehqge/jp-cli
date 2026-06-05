@@ -8,10 +8,11 @@ error message through ``ui.redact`` so a token can never leak via an error path.
 from __future__ import annotations
 
 import argparse
+import contextlib
 import sys
 from collections.abc import Sequence
 
-from . import __version__, ui
+from . import __version__, ui, update_notify
 from .commands import ALL
 from .errors import EXIT_GENERIC, EXIT_OK, JpError
 
@@ -55,6 +56,14 @@ class _SubparsersWithParent:
 
 
 def main(argv: Sequence[str] | None = None) -> int:
+    # Hidden internal command: the detached update-check worker. Intercepted
+    # before argparse so it is never a visible/registered subcommand.
+    raw = list(sys.argv[1:] if argv is None else argv)
+    if raw == ["_update-check"]:
+        from .commands import update_check
+
+        return update_check.run(argparse.Namespace())
+
     parser = build_parser()
     args = parser.parse_args(argv)
 
@@ -72,19 +81,24 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     try:
         rc = func(args)
-        return int(rc) if rc is not None else EXIT_OK
+        rc = int(rc) if rc is not None else EXIT_OK
     except JpError as exc:
         # Central redaction at the error boundary.
         ui.error(exc.message)
-        return exc.exit_code
+        rc = exc.exit_code
     except KeyboardInterrupt:
         ui.error("interrupted")
-        return EXIT_GENERIC
+        rc = EXIT_GENERIC
     except BrokenPipeError:  # pragma: no cover
         return EXIT_OK
     except Exception as exc:  # last-resort: never leak a token in a traceback line
         ui.error(f"unexpected error: {exc}")
-        return EXIT_GENERIC
+        rc = EXIT_GENERIC
+
+    # Passive 'update available' notice -- never affects rc, never raises.
+    with contextlib.suppress(Exception):
+        update_notify.maybe_notify(args)
+    return rc
 
 
 if __name__ == "__main__":
