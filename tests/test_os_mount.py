@@ -184,3 +184,35 @@ def test_first_free_letter_all_taken_raises():
     every = {chr(c) for c in range(ord("A"), ord("Z") + 1)}
     with pytest.raises(MountError):
         first_free_drive_letter(every)
+
+
+def test_rmdir_if_empty_retries_then_succeeds(tmp_path, monkeypatch):
+    from jp.mount import os_mount
+
+    target = tmp_path / "mnt"
+    target.mkdir()
+    calls = {"n": 0}
+    real_rmdir = os_mount.Path.rmdir
+
+    def _flaky_rmdir(self):
+        calls["n"] += 1
+        if calls["n"] < 3:
+            raise OSError(16, "Resource busy")  # EBUSY, like a settling umount
+        return real_rmdir(self)
+
+    monkeypatch.setattr(os_mount.Path, "rmdir", _flaky_rmdir)
+    monkeypatch.setattr(os_mount, "_rmdir_if_empty", os_mount._rmdir_if_empty)  # ensure real
+    os_mount._rmdir_if_empty(str(target), attempts=5, delay=0.0)
+    assert calls["n"] == 3
+    assert not target.exists()
+
+
+def test_rmdir_if_empty_never_removes_nonempty(tmp_path):
+    from jp.mount import os_mount
+
+    target = tmp_path / "mnt"
+    target.mkdir()
+    (target / "keep.txt").write_text("data")
+    os_mount._rmdir_if_empty(str(target), attempts=3, delay=0.0)
+    assert target.exists()  # rmdir refuses non-empty -> data safe
+    assert (target / "keep.txt").read_text() == "data"

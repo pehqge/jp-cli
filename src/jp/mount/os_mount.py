@@ -220,9 +220,26 @@ def _prepare_dir_target(target: str) -> None:
     path.mkdir(parents=True, exist_ok=False)
 
 
-def _rmdir_if_empty(target: str) -> None:
-    with contextlib.suppress(OSError):
-        Path(target).rmdir()
+def _rmdir_if_empty(target: str, *, attempts: int = 12, delay: float = 0.1) -> None:
+    """Remove ``target`` once it is an empty directory, retrying briefly.
+
+    A macOS WebDAV ``umount`` can return before the kernel finishes detaching,
+    so the mountpoint is transiently still "mounted"/busy and an immediate
+    ``rmdir`` fails (EBUSY / ENOTEMPTY) -- which previously left the empty folder
+    behind. ``rmdir`` only ever removes an EMPTY directory, so retrying can never
+    delete user data; it just waits out the unmount.
+    """
+    import time
+
+    for i in range(max(1, attempts)):
+        try:
+            Path(target).rmdir()
+            return
+        except FileNotFoundError:
+            return  # already gone
+        except OSError:
+            if i < attempts - 1:
+                time.sleep(delay)
 
 
 def build_auto_mount_handle(
