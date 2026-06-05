@@ -219,6 +219,9 @@ class WebSocket:
         try:
             if secure:
                 ctx = ssl_context or ssl.create_default_context()
+                # Refuse the broken TLS 1.0/1.1 that a default context still
+                # permits -- require TLS 1.2+ (every modern Jupyter server has it).
+                ctx.minimum_version = ssl.TLSVersion.TLSv1_2
                 sock = ctx.wrap_socket(raw, server_hostname=host)
             else:
                 sock = raw

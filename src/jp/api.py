@@ -162,6 +162,8 @@ class Api:
         self._warned_large: set[str] = set()
         # Always a verifying context. We never pass an unverified one.
         self._ssl_context = ssl_context or ssl.create_default_context()
+        # Require TLS 1.2+ (a default context still permits the broken 1.0/1.1).
+        self._ssl_context.minimum_version = ssl.TLSVersion.TLSv1_2
         ui.register_secret(token)
 
         split = urllib.parse.urlsplit(self.base_url)
