@@ -1,6 +1,7 @@
 cff-version: 1.2.0
 message: "If you use this software, please cite it using the metadata from this file."
 title: "jpsync: a git-like CLI to safely sync local folders with a remote JupyterHub"
+doi: "10.5281/zenodo.20552614"
 abstract: >-
   jpsync (jp) is a zero-dependency, pure-Python command-line tool that keeps a
   local folder in sync with a directory on a remote JupyterHub, the way git keeps
