@@ -183,6 +183,33 @@ It only opens an ephemeral terminal session (it never touches your files), and
 the session is cleaned up when you exit. See the
 [command reference](docs/commands.md#remote-shell) for the details.
 
+### Bonus: run a local script on the server — without pushing it
+
+Editing a script locally and want to run it remotely without `jp push` on every
+change? `jp run <file>` ships the *source* through an ephemeral terminal and runs
+it on the remote, in the same mapped folder you're standing in — so it behaves
+exactly like running it locally (relative `open()`, sibling `import`, `__file__`
+all resolve against that folder). The exit code is propagated.
+
+```bash
+jp run train.py --epochs 5      # from the workspace root -> runs in <prefix>
+jp run analyze.py               # from a subfolder -> runs in <prefix>/<subfolder>
+jp run cleanup.sh               # shebang/extension picks the interpreter
+jp run --as python3 script      # force the interpreter (e.g. extensionless file)
+jp run --dry-run train.py       # preview target folder + source, run nothing
+```
+
+The interpreter is chosen from the file's shebang, else its extension (`.py`,
+`.sh`, `.js`, `.rb`, `.R`, …), or `--as`. The script source is written to a temp
+file (`__temp__.<name>.<random>.<ext>`) *in that folder*, executed, then removed —
+only that one file is ever created or deleted, so concurrent `jp run`s never clash
+and your files are never overwritten. For Python, `sys.argv[0]`/`__file__`/
+tracebacks show the real name, not the temp file. You see only the program's
+output, streamed live — no remote shell prompt, and `input()` works just like
+locally. Any **data** files the script opens must already exist on the remote
+(`jp push` those first). POSIX only for now (macOS + Linux); Windows support lands
+with the `jp terminal` Windows fix.
+
 ---
 
 ## Command reference
@@ -202,6 +229,7 @@ the session is cleaned up when you exit. See the
 | `jp rm <path>` | Delete on the remote — gated, dry-run + typed confirmation. The only deleter. |
 | `jp kernel` | Set up a VS Code remote kernel to run notebooks in the right directory ([guide](docs/vscode-remote-cwd.md)). |
 | `jp terminal` | Open the remote machine's shell in your terminal, in the workspace folder. Creates/deletes only an ephemeral terminal session; touches no files. |
+| `jp run <file> [args…]` | Run a local script on the remote in the current mapped folder, without pushing it. Interpreter from shebang/extension or `--as`; `--dry-run` to preview. Propagates the exit code. POSIX only. |
 | `jp doctor` | Diagnose token, connectivity, server status. |
 | `jp update` | Update jp to the latest version. |
 | `jp version` | Print the version (also `jp --version`). |
