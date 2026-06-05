@@ -8,6 +8,7 @@ import cycle through ``commands/__init__``.
 from __future__ import annotations
 
 import json
+import re
 import urllib.error
 import urllib.request
 from dataclasses import dataclass
@@ -15,6 +16,11 @@ from dataclasses import dataclass
 from . import ui
 
 _REPO = "pehqge/jpsync"
+
+# Invisible markers (shared with scripts/release_notes_ai.py) wrapping the clean,
+# AI-written highlights block inside the full release body.
+_HL_START = "<!-- jp-changelog:start -->"
+_HL_END = "<!-- jp-changelog:end -->"
 
 
 @dataclass
@@ -70,7 +76,48 @@ def releases_since(version: str) -> list[Release]:
     return out
 
 
-def render(release: Release) -> None:
+def highlights(body: str) -> str | None:
+    """Return the clean AI-written highlights block from a release body, if present."""
+    if _HL_START in body and _HL_END in body:
+        block = body.split(_HL_START, 1)[1].split(_HL_END, 1)[0].strip()
+        return block or None
+    return None
+
+
+_BOLD_RE = re.compile(r"\*\*(.+?)\*\*")
+
+
+def _inline(text: str) -> str:
+    """Render markdown **bold** as terminal bold (or strip the markers if no color)."""
+    import sys
+
+    if ui._color_enabled(sys.stdout):
+        return _BOLD_RE.sub(lambda m: ui._Style.BOLD + m.group(1) + ui._Style.RESET, text)
+    return _BOLD_RE.sub(lambda m: m.group(1), text)
+
+
+def _render_markdown(text: str) -> None:
+    """Render lightly-styled markdown to the terminal: bold headings, clean bullets."""
+    for line in text.splitlines():
+        stripped = line.strip()
+        if stripped.startswith("#"):
+            ui.heading(stripped.lstrip("# ").strip())
+        elif stripped.startswith(("- ", "* ")):
+            ui.out("  • " + _inline(stripped[2:]))
+        else:
+            ui.out(_inline(line))
+
+
+def render(release: Release, full: bool = False) -> None:
+    """Show a release. By default shows only the clean highlights block when the
+    release has one; pass ``full=True`` (or for releases without highlights) to
+    show the entire body."""
     ui.heading(release.name or release.tag)
-    for line in release.body.splitlines():
-        ui.out(line)
+    hl = highlights(release.body)
+    if hl and not full:
+        _render_markdown(hl)
+    else:
+        for line in release.body.splitlines():
+            if line.strip() in (_HL_START, _HL_END):
+                continue
+            ui.out(line)

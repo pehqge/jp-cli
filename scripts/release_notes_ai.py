@@ -24,6 +24,11 @@ import urllib.request
 _GEMINI_BASE = "https://generativelanguage.googleapis.com/v1beta/models"
 _DEFAULT_MODEL = "gemini-flash-latest"
 
+# Invisible HTML-comment markers (shared with src/jp/changelog.py) so `jp
+# changelog` can extract just this clean section from the full release body.
+_HL_START = "<!-- jp-changelog:start -->"
+_HL_END = "<!-- jp-changelog:end -->"
+
 
 def _semver(tag: str) -> tuple[int, int, int]:
     parts = tag.lstrip("vV").split(".")
@@ -48,15 +53,19 @@ def _git(*args: str) -> str:
 
 def build_prompt(commits: str, diffstat: str, readme: str) -> str:
     return (
-        "You are writing release highlights for the open-source CLI 'jp' (PyPI: jpsync), "
-        "a git-like tool that syncs local folders with a remote JupyterHub.\n\n"
-        "Write a concise, PROFESSIONAL release-notes section titled exactly '## Highlights'. "
-        "Use no emoji. For each notable user-facing change, explain in one or two sentences "
-        "WHAT changed and HOW a user uses it (commands/flags). Ground every claim strictly in "
-        "the commits and diff below -- do not invent features. Skip internal refactors and CI-only "
-        "changes. Output Markdown only, no preamble.\n\n"
+        "You write release highlights for 'jp' (PyPI: jpsync), a git-like CLI that syncs "
+        "local folders with a remote JupyterHub. The audience is end users, not contributors.\n\n"
+        "Produce a SHORT, clean, well-organized highlights section. Rules:\n"
+        "- Start with one plain sentence summarizing the release. No title line, no preamble.\n"
+        "- Then group the notable, USER-FACING changes under these headings, in this order, "
+        "OMITTING any heading with no items: '### New', '### Improvements', '### Fixes'.\n"
+        "- Each item is one bullet: `- **Short title** — what it does, and how to use it "
+        "(name the exact command/flag).` One sentence. Plain, concrete, professional.\n"
+        "- Be selective: at most 6 bullets total. Merge related commits. Skip anything internal "
+        "(refactors, CI, tests, docs-only, release chores, dependency bumps).\n"
+        "- No emoji. No commit hashes or PR numbers. No marketing fluff. Markdown only.\n\n"
         f"## Commits\n{commits}\n\n## Diffstat\n{diffstat}\n\n"
-        f"## README (for usage context)\n{readme[:6000]}\n"
+        f"## README (for usage/context)\n{readme[:6000]}\n"
     )
 
 
@@ -123,21 +132,35 @@ def main(argv: list[str]) -> int:
         print(f"Gemini call failed ({exc}); skipping AI highlights.", file=sys.stderr)
         return 0
 
+    block = f"{_HL_START}\n## Highlights\n\n{highlights}\n{_HL_END}"
+
     if not _has_gh():
-        print("gh CLI not available; highlights generated but not appended:\n")
-        print(highlights)
+        print("gh CLI not available; highlights generated but not written:\n")
+        print(block)
         return 0
-    # Append to the release body. Never fail the release on a gh error -- the
-    # highlights are a nice-to-have, not a release gate.
+    # Prepend the highlights to the release body so they lead on GitHub and can
+    # be extracted by `jp changelog`. Never fail the release on a gh error --
+    # the highlights are a nice-to-have, not a release gate. If a previous run
+    # already inserted a block, replace it instead of stacking another.
     try:
         existing = _gh("release", "view", new_tag, "--json", "body", "-q", ".body")
-        new_body = f"{existing}\n\n{highlights}".strip()
+        existing = _strip_block(existing)
+        new_body = f"{block}\n\n{existing}".strip()
         subprocess.run(["gh", "release", "edit", new_tag, "--notes", new_body], check=True)
     except (subprocess.CalledProcessError, OSError) as exc:
-        print(f"gh release edit failed ({exc}); highlights not appended.", file=sys.stderr)
+        print(f"gh release edit failed ({exc}); highlights not written.", file=sys.stderr)
         return 0
-    print(f"Appended AI highlights to release {new_tag}.")
+    print(f"Wrote AI highlights to release {new_tag}.")
     return 0
+
+
+def _strip_block(body: str) -> str:
+    """Remove a previously-inserted highlights block (idempotent re-runs)."""
+    if _HL_START in body and _HL_END in body:
+        head, rest = body.split(_HL_START, 1)
+        _, tail = rest.split(_HL_END, 1)
+        return (head + tail).strip()
+    return body
 
 
 if __name__ == "__main__":
