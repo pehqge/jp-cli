@@ -464,6 +464,151 @@ def select_one(labels: Sequence[str], title: str = "", _reader: object | None = 
 
 
 # --------------------------------------------------------------------------- #
+# Credential selector (site-aware: filter by origin, set site inline)
+# --------------------------------------------------------------------------- #
+
+
+def select_credential(
+    creds: Sequence[object],
+    target_site: str = "",
+    on_set_site: Callable[[object, str], str] | None = None,
+    title: str = "",
+    _reader: object | None = None,
+) -> object | None:
+    """Pick one credential, returns the chosen object or None (Esc/cancel).
+
+    ``creds`` is a list of objects each exposing ``.name`` (str), ``.scope``
+    (str), and ``.site`` (str). Two view modes:
+
+    - ``'site'`` (default when ``target_site`` is set AND at least one cred
+      matches the filter): show only creds where ``site == ""`` (legacy
+      wildcard) or ``site.lower() == target_site.lower()``.
+    - ``'all'``: show every cred.
+
+    Key ``a`` toggles between the two modes (only meaningful when
+    ``target_site`` is set; otherwise always show all and ``a`` is a no-op).
+
+    Each row renders ``> name  (scope)  <site or '(no site)'>`` with the
+    highlighted row in CYAN like :func:`select_one`.
+
+    Key ``s`` on a highlighted cred whose ``.site == ""`` opens an inline text
+    prompt to paste a URL; the typed string is passed to
+    ``on_set_site(cred, raw) -> str`` which returns the stored origin (or ``""``
+    on failure). On non-empty return, ``cred.site`` is set in place and the view
+    re-filtered.
+
+    Up/Down (and ``k``/``j``) move, Enter selects (returns the highlighted
+    cred), Esc/``q`` cancels (returns None). ``_reader`` is the test seam (see
+    :func:`select_one`).
+    """
+    if _reader is None and not interactive():
+        raise RuntimeError("select_credential requires an interactive terminal")
+    rows = list(creds)
+    if not rows:
+        return None
+
+    def matches_site(c: object) -> bool:
+        site = getattr(c, "site", "") or ""
+        return site == "" or site.lower() == target_site.lower()
+
+    # Default to the filtered view only when target_site is set and it actually
+    # narrows things (at least one cred matches); otherwise show everything.
+    mode = "site" if target_site and any(matches_site(c) for c in rows) else "all"
+
+    idx = 0
+    prev_lines = 0
+
+    def visible() -> list[int]:
+        if mode == "site" and target_site:
+            return [i for i, c in enumerate(rows) if matches_site(c)]
+        return list(range(len(rows)))
+
+    def render() -> None:
+        nonlocal prev_lines
+        vis = visible()
+        lines: list[str] = []
+        if title:
+            lines.append(f"{BOLD}{title}{RESET}")
+            lines.append("")
+        for vi, i in enumerate(vis):
+            c = rows[i]
+            cursor = f"{CYAN}>{RESET} " if vi == idx else "  "
+            color = CYAN if vi == idx else ""
+            end = RESET if vi == idx else ""
+            site = getattr(c, "site", "") or ""
+            site_disp = site if site else f"{DIM}(no site){RESET}"
+            scope = getattr(c, "scope", "")
+            lines.append(f"{cursor}{color}{c.name}{end}  ({scope})  {site_disp}")
+        if not vis:
+            lines.append(f"  {DIM}(no credentials){RESET}")
+        lines.append("")
+        footer = f"{DIM}Up/Down move · Enter select · Esc cancel"
+        if target_site:
+            footer += " · a all/site"
+        if on_set_site is not None:
+            footer += " · s set site"
+        footer += RESET
+        lines.append(footer)
+        prev_lines = _render_block(lines, prev_lines)
+
+    def edit_site(reader: object, cred: object) -> None:
+        """Inline URL prompt; on commit, push through ``on_set_site``."""
+        nonlocal prev_lines
+        typed = ""
+        while True:
+            lines = [
+                "",
+                f"{CYAN}Paste a Jupyter URL to link this credential to its server:{RESET} {typed}",
+                "",
+                f"{DIM}Enter save · Esc cancel{RESET}",
+            ]
+            prev_lines = _render_block(lines, prev_lines)
+            key = reader.read_key()
+            if key == "enter":
+                origin = on_set_site(cred, typed)
+                if origin:
+                    cred.site = origin
+                return
+            if key in ("esc", ""):
+                return
+            if key == "backspace":
+                typed = typed[:-1]
+            elif len(key) == 1 and key.isprintable():
+                typed += key
+
+    _hide_cursor()
+    try:
+        with _reader if _reader is not None else _make_reader() as reader:
+            while True:
+                render()
+                vis = visible()
+                nvis = len(vis)
+                key = reader.read_key()
+                if key in ("up", "k"):
+                    idx = (idx - 1) % max(nvis, 1)
+                elif key in ("down", "j"):
+                    idx = (idx + 1) % max(nvis, 1)
+                elif key == "a" and target_site:
+                    mode = "all" if mode == "site" else "site"
+                    idx = 0
+                elif key == "s" and on_set_site is not None and vis:
+                    # Available for ANY highlighted cred: add a site to a legacy
+                    # cred, or overwrite an existing one.
+                    cred = rows[vis[idx]]
+                    edit_site(reader, cred)
+                    # Re-filter and clamp the cursor after a possible change.
+                    nvis = len(visible())
+                    idx = min(idx, nvis - 1) if nvis else 0
+                elif key == "enter":
+                    if vis:
+                        return rows[vis[idx]]
+                elif key in ("esc", "q", ""):
+                    return None
+    finally:
+        _show_cursor()
+
+
+# --------------------------------------------------------------------------- #
 # Keep/Delete confirmation selector (mirror-mode deletions)
 # --------------------------------------------------------------------------- #
 

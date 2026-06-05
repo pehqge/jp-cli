@@ -57,13 +57,19 @@ def username_of(url: str) -> str:
 
 ### `src/jp/commands/_context.py`
 
-`resolve_credential(*, credential="", token_path="", root=None, target_url="")`:
+**Independente da jp-live**: a feature mexe SÓ no corpo de `choose_credential`
+(mesma assinatura que `origin/main`). Não adiciona `resolve_credential` nem
+`config_from_url` — essas são da branch `feat/jp-live-mount`; recriá-las aqui só
+geraria conflito sem caller nesta branch. Quando a jp-live mergear, ela passa o
+`target_url=base_url` pro seu próprio fluxo.
 
-1. `token_path` explícito → `""`.
-2. `credential` explícito → valida contra `list_credentials(root)` (todas) → retorna.
-3. `site = urls.origin_of(target_url)` se houver `target_url`.
-4. `available = list_credentials(root)`. Se vazio → checa `JP_TOKEN`/`JP_TOKEN_FILE`
+`choose_credential(args, root=None)` (lógica inline, ganho de filtro por site):
+
+1. `args.token_path` → `""`.
+2. `args.credential` explícito → valida contra `list_credentials(root)` → retorna.
+3. `available = list_credentials(root)`. Se vazio → checa `JP_TOKEN`/`JP_TOKEN_FILE`
    (retorna `""`) senão `AuthError` (mensagem atual).
+4. `site = urls.origin_of(args.url)` se houver `args.url`.
 5. `pool = list_for_site(site, root)` se `site` senão `available`. Se `pool`
    vazio (site não casa nada) → `pool = available` (fallback: mostra todas).
 6. `len(pool) == 1` → usa silenciosa.
@@ -75,8 +81,7 @@ def username_of(url: str) -> str:
 `credentials.set_site(cred.name, origin, scope=cred.scope, root=root)`, devolve o
 origin gravado (`""` se URL inválida — TUI não muda nada nesse caso).
 
-- `choose_credential` passa `target_url=getattr(args, "url", "")`.
-- `config_from_url` passa `target_url=base_url` (origin_of corta o path).
+`clone`/`init` já passam `args.url` (positional da URL) → filtro automático.
 
 ### `src/jp/tui.py`
 
@@ -92,7 +97,9 @@ def select_credential(creds, target_site="", on_set_site=None, title="",
 
 Linha: `> nome  (scope)  <site ou (sem site)>`. Input inline reusa
 `reader.read_key()` acumulando string até enter/esc. Rodapé mostra os atalhos
-ativos (`a todas/site · s definir site` só quando aplicável).
+ativos. **`s` (definir site) vale pra QUALQUER credencial destacada** (adicionar
+ou corrigir o site quando o usuário achar necessário), não só as sem-site —
+disponível sempre que `on_set_site` é passado.
 
 ### `src/jp/commands/login.py` (fluxo reordenado)
 
@@ -113,19 +120,25 @@ ativos (`a todas/site · s definir site` só quando aplicável).
 
 Args novos: `--url`/`--site` (URL non-interativa), `--no-browser`.
 
-## Backwards-compat
+## Backwards-compat (verificado por smoke test)
 
-- Credenciais sem `site` continuam válidas; viram wildcard no filtro.
-- `resolve_credential` sem `target_url` → comportamento atual (todas + `select_one`).
-- Registry sem `site` carrega normal (`entry.get`).
+- Credenciais sem `site` continuam válidas; viram wildcard no filtro
+  (`list_for_site` inclui sempre as sem-site).
+- **1 credencial existente → auto-selecionada sem prompt**, mesmo com `target_url`
+  (zero mudança de UX pra quem já usa uma só).
+- `choose_credential` sem `args.url` → comportamento atual.
+- Registry sem `site` carrega normal (`entry.get("site", "")`).
+- `jp login` scripted non-tty (sem `--url`) → `site=""`, não lê stdin no passo de
+  site; token via stdin/`--token-path` intacto.
+- Config de workspace e `load_token` inalterados.
 
 ## Testes
 
 - `tests/test_credentials.py`: site persiste, `list_for_site` (match + wildcard),
   `set_site` (escopo certo, nome ausente), `add`/`add_path` com site.
 - `tests/test_urls.py` (ou existente): `origin_of`, `username_of`.
-- `tests/test_config_from_url.py` + `tests/test_clone_init.py`: filtro por origin,
-  1-match auto, fallback todas, `target_url` threading.
+- `tests/test_clone_init.py`: `choose_credential` filtra por origin via `args.url`,
+  1-match auto, fallback todas, sem-url = legado.
 - `tests/test_tui_select_credential.py`: reader seam — toggle `a`, editar site `s`
   (relista), escolher.
 - `tests/test_login.py`: mock `webbrowser`+stdin — site salvo, nome default,

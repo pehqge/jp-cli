@@ -99,3 +99,61 @@ def test_list_credentials_merges_local_and_global(home, tmp_path):
 def test_empty_token_refused(home):
     with pytest.raises(AuthError):
         credentials.add("myserver", "   ", scope="global")
+
+
+def test_add_with_site_persists_and_round_trips(home):
+    cred = credentials.add(
+        "myserver", "SITETOKEN1234567890", scope="global", site="https://hub.example.com"
+    )
+    assert cred.site == "https://hub.example.com"
+    reg = json.loads((home / ".config" / "jp" / "credentials.json").read_text())
+    assert reg["credentials"]["myserver"]["site"] == "https://hub.example.com"
+    (loaded,) = [c for c in credentials.list_credentials() if c.name == "myserver"]
+    assert loaded.site == "https://hub.example.com"
+
+
+def test_add_without_site_stores_no_key(home):
+    credentials.add("nosite", "NOSITETOKEN1234567890", scope="global")
+    reg = json.loads((home / ".config" / "jp" / "credentials.json").read_text())
+    assert "site" not in reg["credentials"]["nosite"]
+    (loaded,) = [c for c in credentials.list_credentials() if c.name == "nosite"]
+    assert loaded.site == ""
+
+
+def test_add_path_with_site_persists(home, tmp_path):
+    src = tmp_path / "mytoken"
+    src.write_text("EXISTINGTOKEN1234567890\n")
+    cred = credentials.add_path("bypath", str(src), scope="global", site="https://hub.example.com")
+    assert cred.site == "https://hub.example.com"
+    reg = json.loads((home / ".config" / "jp" / "credentials.json").read_text())
+    assert reg["credentials"]["bypath"]["site"] == "https://hub.example.com"
+
+
+def test_set_site_updates_membership(home):
+    credentials.add("srv", "SETSITETOKEN1234567890", scope="global")
+    # No site yet -> wildcard, matches any site filter.
+    assert {c.name for c in credentials.list_for_site("https://a.example")} == {"srv"}
+    updated = credentials.set_site("srv", "https://a.example", scope="global")
+    assert updated.site == "https://a.example"
+    # Now it matches its own site...
+    assert {c.name for c in credentials.list_for_site("https://a.example")} == {"srv"}
+    # ...but no longer a different one.
+    assert {c.name for c in credentials.list_for_site("https://b.example")} == set()
+
+
+def test_set_site_missing_name_raises(home):
+    with pytest.raises(UsageError):
+        credentials.set_site("ghost", "https://a.example", scope="global")
+
+
+def test_list_for_site_filters_and_wildcards(home):
+    credentials.add("a", "AAAATOKEN1234567890", scope="global", site="https://a.example")
+    credentials.add("b", "BBBBTOKEN1234567890", scope="global", site="https://b.example")
+    credentials.add("legacy", "LEGTOKEN1234567890", scope="global")  # no site
+
+    # Same origin (case-insensitive) plus the siteless wildcard; excludes other site.
+    names = {c.name for c in credentials.list_for_site("HTTPS://A.EXAMPLE")}
+    assert names == {"a", "legacy"}
+
+    # Empty site -> everything.
+    assert {c.name for c in credentials.list_for_site("")} == {"a", "b", "legacy"}

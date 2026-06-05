@@ -43,6 +43,7 @@ class Credential:
     name: str
     token_path: str
     scope: str  # "global" | "local"
+    site: str = ""  # origin (scheme://host[:port]) the token belongs to; "" = legacy
 
 
 # --------------------------------------------------------------------------- #
@@ -141,7 +142,14 @@ def _entries(scope_dir: Path, scope: str) -> list[Credential]:
     out: list[Credential] = []
     for name, entry in sorted(reg.get("credentials", {}).items()):
         if isinstance(entry, dict) and entry.get("token_path"):
-            out.append(Credential(name=name, token_path=str(entry["token_path"]), scope=scope))
+            out.append(
+                Credential(
+                    name=name,
+                    token_path=str(entry["token_path"]),
+                    scope=scope,
+                    site=entry.get("site", ""),
+                )
+            )
     return out
 
 
@@ -174,6 +182,42 @@ def resolve(name: str, root: Path | None = None) -> Credential | None:
     return None
 
 
+def list_for_site(site: str, root: Path | None = None) -> list[Credential]:
+    """Credentials that match ``site`` (case-insensitive origin) or carry no site.
+
+    A credential with an empty ``site`` is legacy and acts as a wildcard, so it
+    is always included. An empty ``site`` argument means "no filter": return
+    every credential, exactly like :func:`list_credentials`.
+    """
+    if not site:
+        return list_credentials(root)
+    target = site.lower()
+    return [c for c in list_credentials(root) if c.site == "" or c.site.lower() == target]
+
+
+def set_site(name: str, site: str, *, scope: str, root: Path | None = None) -> Credential:
+    """Update the stored site (origin) of credential ``name`` in ``scope``.
+
+    Raises :class:`UsageError` if no credential by that name exists in ``scope``.
+    Passing an empty ``site`` clears the field (drops the key from the registry).
+    """
+    scope_dir = _scope_dir(scope, root)
+    reg_path = _registry_path(scope_dir)
+    reg = _read_registry(reg_path)
+    creds = reg.get("credentials", {})
+    if name not in creds:
+        raise UsageError(f"no {scope} credential named {name!r}")
+    entry = creds[name]
+    if site:
+        entry["site"] = site
+    else:
+        entry.pop("site", None)
+    _save_registry(reg_path, reg)
+    return Credential(
+        name=name, token_path=str(entry.get("token_path", "")), scope=scope, site=site
+    )
+
+
 def add(
     name: str,
     token: str,
@@ -181,6 +225,7 @@ def add(
     scope: str,
     root: Path | None = None,
     overwrite: bool = False,
+    site: str = "",
 ) -> Credential:
     """Store a token VALUE under ``name`` in ``scope`` (writes a 0600 file)."""
     name = validate_name(name)
@@ -198,9 +243,12 @@ def add(
     tok_path = _token_file(scope_dir, name)
     _write_private(tok_path, token + "\n")
     ui.register_secret(token)
-    reg.setdefault("credentials", {})[name] = {"token_path": str(tok_path)}
+    entry: dict = {"token_path": str(tok_path)}
+    if site:  # keep the registry clean: only store a site when we have one
+        entry["site"] = site
+    reg.setdefault("credentials", {})[name] = entry
     _save_registry(reg_path, reg)
-    return Credential(name=name, token_path=str(tok_path), scope=scope)
+    return Credential(name=name, token_path=str(tok_path), scope=scope, site=site)
 
 
 def add_path(
@@ -210,6 +258,7 @@ def add_path(
     scope: str,
     root: Path | None = None,
     overwrite: bool = False,
+    site: str = "",
 ) -> Credential:
     """Register an EXISTING token file by path under ``name`` (no copy made)."""
     name = validate_name(name)
@@ -224,9 +273,12 @@ def add_path(
             f"a {scope} credential named {name!r} already exists; "
             "choose another name or pass --force to overwrite"
         )
-    reg.setdefault("credentials", {})[name] = {"token_path": str(token_path)}
+    entry: dict = {"token_path": str(token_path)}
+    if site:  # keep the registry clean: only store a site when we have one
+        entry["site"] = site
+    reg.setdefault("credentials", {})[name] = entry
     _save_registry(reg_path, reg)
-    return Credential(name=name, token_path=str(token_path), scope=scope)
+    return Credential(name=name, token_path=str(token_path), scope=scope, site=site)
 
 
 def read_token(cred: Credential) -> str:

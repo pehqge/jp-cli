@@ -54,14 +54,20 @@ def choose_credential(args: object, root: Path | None = None) -> str:
     when no credential applies (an explicit ``--token-path`` or a ``JP_TOKEN``/
     ``JP_TOKEN_FILE`` env token is being used instead).
 
+    When the command carries a ``--url``, the candidate pool is narrowed to
+    credentials whose *site* matches the URL's origin (legacy site-less
+    credentials are wildcards); if nothing matches that site we fall back to
+    showing every credential. Without a URL, the whole pool is considered, so
+    behavior is identical to the legacy flow.
+
     Resolution: an explicit ``--credential`` is validated against what exists;
     otherwise zero credentials is an error (run ``jp login`` first), exactly one
-    is used silently, and several trigger an interactive picker (or, in a
-    non-interactive shell, an error asking for ``--credential``).
+    matching credential is used silently, and several trigger an interactive
+    picker (or, in a non-interactive shell, an error asking for ``--credential``).
     """
     import os
 
-    from .. import credentials, tui
+    from .. import credentials, tui, urls
     from ..errors import AuthError, UsageError
 
     # An explicit token path bypasses the credential system entirely.
@@ -82,18 +88,39 @@ def choose_credential(args: object, root: Path | None = None) -> str:
             return ""
         raise AuthError("no credentials configured. Run 'jp login' first to save your API token.")
 
-    if len(available) == 1:
-        return available[0].name
+    # Narrow the candidate pool to the URL's origin when we have one. An empty
+    # site means "no filter". If the site matched nothing, fall back to all.
+    target_url = (getattr(args, "url", "") or "").strip()
+    site = urls.origin_of(target_url) if target_url else ""
+    pool = credentials.list_for_site(site, root) if site else available
+    if site and not pool:
+        pool = available
 
-    # More than one: let the user choose.
+    if len(pool) == 1:
+        return pool[0].name
+
+    # More than one: let the user choose. The picker shows each credential's
+    # site, lets 'a' toggle between this-site and all, and 's' add/fix a site.
     if tui.interactive():
-        labels = [f"{c.name}  ({c.scope})" for c in available]
-        idx = tui.select_one(labels, title="Select a credential for this workspace")
-        if idx is None:
-            raise UsageError("no credential selected")
-        return available[idx].name
 
-    names = ", ".join(c.name for c in available)
+        def on_set_site(cred: object, raw: str) -> str:
+            origin = urls.origin_of(raw)
+            if not origin:
+                return ""
+            credentials.set_site(cred.name, origin, scope=cred.scope, root=root)
+            return origin
+
+        chosen = tui.select_credential(
+            available,
+            target_site=site,
+            on_set_site=on_set_site,
+            title="Select a credential for this workspace",
+        )
+        if chosen is None:
+            raise UsageError("no credential selected")
+        return chosen.name
+
+    names = ", ".join(c.name for c in pool)
     raise UsageError(
         f"multiple saved credentials; choose one with --credential NAME (one of: {names})"
     )
