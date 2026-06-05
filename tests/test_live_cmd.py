@@ -282,7 +282,10 @@ def test_code_writes_and_cleans_up_workspace_file(tmp_path, monkeypatch):
         if wf.is_file():
             data = json.loads(wf.read_text())
             seen["folder"] = data["folders"][0]["path"]
-            seen["task_cmd"] = data["tasks"]["tasks"][0]["command"]
+            task = data["tasks"]["tasks"][0]
+            # type: process with an args array -- no shell string is built.
+            seen["task_type"] = task["type"]
+            seen["task_args"] = task["args"]
 
     monkeypatch.setattr(live, "_keepalive_loop", _fake_keepalive)
     # launcher_argv returns None for the vscode URI path? Force None by making the
@@ -296,7 +299,8 @@ def test_code_writes_and_cleans_up_workspace_file(tmp_path, monkeypatch):
     assert rc == EXIT_OK
     assert seen["existed_during_serve"] is True
     assert seen["folder"] == str(mount_folder)
-    assert _URL in seen["task_cmd"]
+    assert seen["task_type"] == "process"
+    assert _URL in seen["task_args"]  # the URL is one argv element, not a shell string
     # The workspace file lived in cwd, not inside the mount folder.
     assert not (mount_folder / "jp-live-test.code-workspace").exists()
     # Cleaned up after serve returns.

@@ -19,17 +19,18 @@ def build_code_workspace(folder_open_target: str, url: str, credential: str) -> 
     """Return the ``.code-workspace`` JSON structure (pure).
 
     - ``folder_open_target`` is the mounted folder/handle VS Code should open.
-    - The ``folderOpen`` task runs ``jp terminal "<url>" --credential <name>``;
+    - The ``folderOpen`` task runs ``jp terminal <url> [--credential <name>]``;
       when ``credential`` is empty the ``--credential`` flag is omitted.
 
-    The command is assembled as a single shell string with the URL quoted, so a
-    URL is never split on whitespace and the saved credential name is passed
-    through verbatim (credential names are already restricted to a safe alphabet
-    by ``credentials.validate_name``).
+    The task is ``type: process`` with an explicit ``args`` array, NOT a shell
+    string: VS Code executes ``jp`` directly with these argv, so no shell ever
+    parses the URL or credential name. A URL containing shell metacharacters
+    therefore cannot inject a command (defense in depth -- the URL comes from the
+    user's own command line, but we never build a shell string from it).
     """
-    command = f'jp terminal "{url}"'
+    args = ["terminal", url]
     if credential:
-        command += f" --credential {credential}"
+        args += ["--credential", credential]
     return {
         "folders": [{"path": folder_open_target}],
         "tasks": {
@@ -37,8 +38,9 @@ def build_code_workspace(folder_open_target: str, url: str, credential: str) -> 
             "tasks": [
                 {
                     "label": "jp remote terminal",
-                    "type": "shell",
-                    "command": command,
+                    "type": "process",
+                    "command": "jp",
+                    "args": args,
                     "runOptions": {"runOn": "folderOpen"},
                     "presentation": {"reveal": "always", "panel": "dedicated"},
                 }
