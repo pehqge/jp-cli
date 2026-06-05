@@ -28,6 +28,10 @@ def _args(**kw) -> SimpleNamespace:
     return SimpleNamespace(**base)
 
 
+def _add_with_site(name: str, token: str, site: str) -> None:
+    credentials.add(name, token, scope="global", site=site)
+
+
 def test_zero_credentials_errors(home):
     with pytest.raises(AuthError):
         _context.choose_credential(_args(), root=None)
@@ -64,3 +68,31 @@ def test_unknown_credential_errors(home):
     credentials.add("myserver", "TOKENAAAAAAAAAAAAAA12", scope="global")
     with pytest.raises(UsageError):
         _context.choose_credential(_args(credential="nope"), root=None)
+
+
+# --- choose_credential threads args.url through to site filtering ----------- #
+def test_choose_credential_url_filters_to_single_site_match(home):
+    # Two creds, each pinned to a different site; the URL's origin matches only
+    # one -> the pool narrows to a single credential and is auto-selected even
+    # in a non-interactive shell.
+    _add_with_site("alpha", "TOKENAAAAAAAAAAAAAA12", "https://a.example.com")
+    _add_with_site("beta", "TOKENBBBBBBBBBBBBBB34", "https://b.example.com")
+    args = _args(url="https://a.example.com/user/me/lab/tree/proj")
+    assert _context.choose_credential(args, root=None) == "alpha"
+
+
+def test_choose_credential_url_no_match_falls_back_to_all(home):
+    # The URL origin matches no credential's site; pool falls back to ALL, and
+    # with more than one credential a non-interactive shell errors.
+    _add_with_site("alpha", "TOKENAAAAAAAAAAAAAA12", "https://a.example.com")
+    _add_with_site("beta", "TOKENBBBBBBBBBBBBBB34", "https://b.example.com")
+    args = _args(url="https://z.example.com/user/me/lab/tree/proj")
+    with pytest.raises(UsageError):
+        _context.choose_credential(args, root=None)
+
+
+def test_choose_credential_without_url_behaves_as_before(home):
+    # No .url attribute at all: getattr default kicks in and behavior matches the
+    # legacy single-credential auto-select.
+    credentials.add("only", "TOKENAAAAAAAAAAAAAA12", scope="global")
+    assert _context.choose_credential(_args(), root=None) == "only"

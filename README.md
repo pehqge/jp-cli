@@ -111,22 +111,28 @@ pipx install "git+https://github.com/pehqge/jpsync"
 
 ### 2. Log in with `jp login`
 
-Run `jp login` and follow the prompts. It asks for a short name, walks you
-through getting the token, then you paste it (your input stays **hidden**).
-Credentials are saved **globally** by default (usable from anywhere); pass
-`--local` to keep it only in the current workspace:
+Run `jp login` and follow the prompts. It first asks for your Jupyter URL (so
+the credential is **linked to that server**), suggests a name from it, opens the
+token page in your browser, then you paste the token you generate (your input
+stays **hidden**). Credentials are saved **globally** by default (usable from
+anywhere); pass `--local` to keep it only in the current workspace:
 
 ```console
 $ jp login
-Name this server/credential (e.g. myserver): myserver
-To get a JupyterHub API token:
-  1. Open your JupyterHub in a browser and log in.
-  2. Go to the Token page (the 'Token' link, or <your-hub>/hub/token).
-  3. Click 'Request new API token' and copy it (it is shown only once).
+Paste your Jupyter URL (to link this credential to its server), or leave blank: https://jupyter.example.com/user/me/lab/tree/x
+Name this server/credential [me-jupyter.example.com]:
+Opening the token page to create an API token: https://jupyter.example.com/hub/token
+Open it in your browser now? [Y/n]: y
 
 Paste your API token (input hidden):
-✓ saved global credential 'myserver'
+✓ saved global credential 'me-jupyter.example.com'
 ```
+
+The URL is optional (leave it blank to skip the link); pass `--url <URL>` to
+supply it non-interactively, or `--no-browser` to not open the token page. The
+**site** (the server's `scheme://host`) is stored alongside the name so that,
+when you have several credentials, `jp` offers only the ones for the server
+you're working with.
 
 **Everything stays on your machine.** `jp` writes the token to a private file
 (permissions `600`) under `~/.config/jp/` (or the workspace's `.jp/` for a local
@@ -154,9 +160,11 @@ cd your-folder
 ```
 
 That creates a `your-folder/` folder with a `.jp/` workspace inside (like `.git/`)
-and downloads the remote tree. If you saved more than one credential, `jp` asks
-which one to use; with a single one it just uses it. The choice is remembered in
-the workspace (`jp clone … --credential <name>` to skip the prompt).
+and downloads the remote tree. `jp` looks at the URL's server and offers only the
+credentials saved for it: with a single match it just uses it; with several it
+shows a picker (press `a` to see all servers, `s` to link a site to a credential).
+The choice is remembered in the workspace (`jp clone … --credential <name>` to
+skip the prompt).
 
 ### 5. Work like git
 
@@ -191,7 +199,8 @@ the session is cleaned up when you exit. See the
 |---|---|
 | `jp clone <url> [dir]` | Clone a remote Jupyter folder into a new local directory. Accepts a `lab/tree` URL or `--base-url`/`--prefix`. |
 | `jp init <url>` | Turn the current folder into a jp workspace (no download). |
-| `jp login` | Save a named API-token credential (name the server, paste the token; defaults to global; use `--local` for workspace-only). |
+| `jp login` | Save a named API-token credential linked to its server (paste the Jupyter URL, name it, paste the token; defaults to global; use `--local` for workspace-only). |
+| `jp credentials` | List, edit, or delete saved credentials. No args opens an interactive manager (delete, set site, rename); `--list`, `--rm NAME`, `--rename OLD NEW`, `--set-site NAME URL` for scripting. |
 | `jp status` | Show local vs. remote differences. Read-only. |
 | `jp push` | Upload local changes. Additive by default. |
 | `jp pull` | Download remote changes. Additive by default. |
@@ -264,9 +273,13 @@ deletions are refused unless you pass `--yes`. Conflicts (both sides changed) ar
 interactive and **everything happens locally** — the token never leaves your
 machine and is never printed:
 
-- You give the credential a **name** (usually the server, e.g. `myserver`).
-- It shows you how to get a token, then prompts you to paste it with the input
-  **hidden** (no echo).
+- It first asks for your **Jupyter URL** and links the credential to that
+  server's **site** (`scheme://host`); the URL is optional (`--url` to supply it,
+  blank to skip).
+- You give the credential a **name** — prefilled from the URL (e.g.
+  `me-jupyter.example.com`), editable.
+- It opens the server's token page in your browser (`--no-browser` to skip), then
+  prompts you to paste the token with the input **hidden** (no echo).
 - The **scope** defaults to **global** (stored in `~/.config/jp/`, usable from
   any directory). Pass `--local` to store the credential only in the current
   workspace's `.jp/`.
@@ -285,9 +298,25 @@ jp login --token-stdin --name lab-gpu --local < token.txt
 ```
 
 When you `jp clone` / `jp init`, `jp` reads the credentials available **globally
-and locally**: with one it's used automatically, with several you pick which
-server to use (or pass `--credential <name>`). The choice is saved in the
-workspace so later `push`/`pull` just work.
+and locally** and matches them against the URL's server: with one match it's used
+automatically, with several you pick (or pass `--credential <name>`). In the
+picker, each credential shows its site; press `a` to toggle between this-server
+and all credentials, and `s` to link a site to one that has none. The choice is
+saved in the workspace so later `push`/`pull` just work.
+
+Manage saved credentials with **`jp credentials`** — run it with no arguments for
+an interactive manager (move with arrows; `d` delete, `s` set/replace site, `r`
+rename, `q` quit), or use flags for scripting:
+
+```bash
+jp credentials --list                                   # name, scope, site (no tokens)
+jp credentials --set-site myserver https://host/user/me # link/replace its site
+jp credentials --rename old new                          # rename
+jp credentials --rm myserver --force                    # delete (no prompt)
+```
+
+Legacy credentials saved before sites existed keep working — they have no site
+and match any server until you link one.
 
 At sync time the token is resolved, in order: `$JP_TOKEN` (a value, for CI) →
 `$JP_TOKEN_FILE` (a path) → the workspace's saved credential → legacy

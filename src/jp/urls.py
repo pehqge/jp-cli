@@ -101,3 +101,31 @@ def parse_clone_url(url: str) -> tuple[str, str]:
     # Defensive: a stray scheme-like or backslash content should not survive.
     prefix = re.sub(r"\\", "/", prefix).strip("/")
     return base_url.rstrip("/"), prefix
+
+
+def origin_of(url: str) -> str:
+    """Return the lowercased ``scheme://host[:port]`` of ``url``, no path/slash.
+
+    Used to identify the *site* a credential belongs to: a token is scoped to a
+    whole hub, so only the origin matters. Returns ``""`` for an empty input or
+    anything that is not an http(s) URL.
+    """
+    parts = urllib.parse.urlsplit((url or "").strip())
+    if parts.scheme not in ("http", "https") or not parts.netloc:
+        return ""
+    # netloc already carries the optional ``:port``; lowercase the whole origin.
+    return f"{parts.scheme.lower()}://{parts.netloc.lower()}"
+
+
+def username_of(url: str) -> str:
+    """Return the segment right after ``/user/`` in a JupyterHub URL, else ``""``.
+
+    The value is unquoted once (matching how the rest of the path is decoded).
+    """
+    parts = urllib.parse.urlsplit((url or "").strip())
+    segments = [s for s in parts.path.split("/") if s != ""]
+    if "user" in segments:
+        idx = segments.index("user")
+        if idx + 1 < len(segments):
+            return urllib.parse.unquote(segments[idx + 1])
+    return ""

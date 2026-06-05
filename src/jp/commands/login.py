@@ -16,16 +16,23 @@ from __future__ import annotations
 
 import argparse
 import getpass
+import re
 import sys
+import webbrowser
 
 from .. import config as config_mod
-from .. import credentials, ui
+from .. import credentials, ui, urls
 from ..errors import EXIT_OK, AuthError, UsageError
 from ..paths import find_root
 
 
 def add_parser(subparsers: argparse._SubParsersAction) -> None:
     p = subparsers.add_parser("login", help="save a named API-token credential")
+    p.add_argument(
+        "--url",
+        default="",
+        help="Jupyter URL to link this credential to its site",
+    )
     p.add_argument("--name", default="", help="name for this credential/server (e.g. myserver)")
     scope = p.add_mutually_exclusive_group()
     scope.add_argument(
@@ -57,6 +64,11 @@ def add_parser(subparsers: argparse._SubParsersAction) -> None:
         action="store_true",
         help="overwrite an existing credential of the same name",
     )
+    p.add_argument(
+        "--no-browser",
+        action="store_true",
+        help="do not open the token page in a browser",
+    )
     p.set_defaults(func=run)
 
 
@@ -83,12 +95,71 @@ def _acquire_token(args: argparse.Namespace) -> str:
     return token
 
 
-def _ask_name(args: argparse.Namespace) -> str:
+def _ask_site(args: argparse.Namespace) -> tuple[str, str]:
+    """Ask for (or read) a Jupyter URL and return ``(origin, username)``.
+
+    The URL only links the credential to its server; an empty value is fine.
+    Anything that is not an http(s) URL is ignored (with a warning) so a typo
+    never blocks the login. Returns ``("", "")`` when there is no usable URL.
+    """
+    url = (args.url or "").strip()
+    if not url:
+        if sys.stdin.isatty():
+            url = input(
+                "Paste your Jupyter URL (to link this credential to its server), or leave blank: "
+            ).strip()
+        else:
+            url = ""
+    if not url:
+        return "", ""
+    origin = urls.origin_of(url)
+    if not origin:
+        ui.warn(f"ignoring {url!r}: not an http(s) URL; the credential will have no site")
+        return "", ""
+    return origin, urls.username_of(url)
+
+
+def _default_name(origin: str, user: str) -> str:
+    """Suggest a credential name from the site origin and (optional) username.
+
+    ``<user>-<host>`` when both are known, else just ``<host>``. The result is
+    sanitized to the ``validate_name`` alphabet; if nothing valid survives we
+    return ``""`` so the caller falls back to asking outright.
+    """
+    host = origin
+    for scheme in ("https://", "http://"):
+        if host.startswith(scheme):
+            host = host[len(scheme) :]
+            break
+    if origin == "":
+        host = ""
+    candidate = f"{user}-{host}" if user and host else host
+    # Map to [A-Za-z0-9._-], must start alnum, no runs of '-', max 64 chars.
+    candidate = re.sub(r"[^A-Za-z0-9._-]", "-", candidate)
+    candidate = re.sub(r"-{2,}", "-", candidate)
+    candidate = re.sub(r"^[^A-Za-z0-9]+", "", candidate)[:64].rstrip("-._")
+    try:
+        return credentials.validate_name(candidate)
+    except UsageError:
+        return ""
+
+
+def _ask_name(args: argparse.Namespace, default: str = "") -> str:
     name = (args.name or "").strip()
     if not name:
         if not sys.stdin.isatty():
-            raise UsageError("a credential name is required (pass --name NAME)")
-        name = input("Name this server/credential (e.g. myserver): ").strip()
+            if default:
+                name = default
+            else:
+                raise UsageError("a credential name is required (pass --name NAME)")
+        else:
+            prompt = (
+                f"Name this server/credential [{default}]: "
+                if default
+                else "Name this server/credential (e.g. myserver): "
+            )
+            ans = input(prompt).strip()
+            name = ans or default
     return credentials.validate_name(name)
 
 
@@ -110,21 +181,45 @@ def _ask_scope(args: argparse.Namespace, in_repo: bool) -> str:
     return "global"
 
 
+def _maybe_open_token_page(origin: str, args: argparse.Namespace) -> None:
+    """Point the user at the hub's token page (and optionally open a browser).
+
+    Only acts when we know the ``origin`` and ``--no-browser`` was not passed.
+    Interactively we offer to open ``<origin>/hub/token`` (default yes); with no
+    tty we just print the URL so the user can open it themselves.
+    """
+    if not origin or args.no_browser:
+        return
+    token_url = f"{origin}/hub/token"
+    if sys.stdin.isatty():
+        ui.info(f"Opening the token page to create an API token: {token_url}")
+        ans = input("Open it in your browser now? [Y/n]: ").strip().lower()
+        if ans in ("", "y", "yes"):
+            webbrowser.open(token_url)
+        ui.info("Generate a token there and paste it below.")
+    else:
+        ui.info(f"Create an API token here: {token_url}")
+
+
 def run(args: argparse.Namespace) -> int:
     root = find_root()  # may be None -- login works outside a workspace (global only)
 
-    name = _ask_name(args)
+    origin, user = _ask_site(args)
+    name = _ask_name(args, default=_default_name(origin, user))
     scope = _ask_scope(args, in_repo=root is not None)
+    _maybe_open_token_page(origin, args)
 
     if args.token_path:
         cred = credentials.add_path(
-            name, args.token_path, scope=scope, root=root, overwrite=args.force
+            name, args.token_path, scope=scope, root=root, overwrite=args.force, site=origin
         )
         # Validate it is readable now (registers + redacts the value).
         credentials.read_token(cred)
     else:
         token = _acquire_token(args)
-        cred = credentials.add(name, token, scope=scope, root=root, overwrite=args.force)
+        cred = credentials.add(
+            name, token, scope=scope, root=root, overwrite=args.force, site=origin
+        )
 
     # If we're inside a workspace, make it use this credential right away.
     if root is not None:
