@@ -18,7 +18,7 @@ import argparse
 
 from .. import config as config_mod
 from .. import credentials, global_prefs, tui, ui
-from ..errors import EXIT_OK, UsageError
+from ..errors import EXIT_OK, ConfigError, UsageError
 from ..settings_schema import BY_KEY, SPECS
 from ._context import load_repo
 
@@ -71,11 +71,42 @@ def _print_list(cfg: config_mod.Config) -> None:
         ui.info(f"{key} = {getattr(cfg, key, '')}")
 
 
+def _print_global() -> None:
+    ui.heading("machine settings (global):")
+    for key in sorted(global_prefs.GLOBAL_KEYS):
+        ui.info(f"{key} = {str(global_prefs.get(key)).lower()}")
+
+
+def _workspace_key_outside_repo(key: str | None) -> ConfigError:
+    keys = ", ".join(sorted(global_prefs.GLOBAL_KEYS))
+    name = f"{key!r} is a workspace setting" if key else "that is a workspace setting"
+    return ConfigError(
+        f"{name}: run inside a jp workspace to view or change it. "
+        f"Machine-wide settings ({keys}) work anywhere."
+    )
+
+
 def run(args: argparse.Namespace) -> int:
     # Machine-wide preferences (notifier / auto-update) are handled before
     # workspace resolution, so they work from any directory.
     if args.action in ("get", "set") and args.key in global_prefs.GLOBAL_KEYS:
         return _run_global(args)
+
+    # config must work outside a workspace: only the per-repo (connection/sync)
+    # settings need one. Resolve the workspace lazily and degrade gracefully.
+    from ..paths import find_root
+
+    if find_root() is None:
+        if args.action in (None, "list"):
+            _print_global()
+            ui.info("")
+            ui.detail(
+                "(not inside a jp workspace -- showing machine settings only; "
+                "cd into a cloned/initialized folder for its connection and sync settings.)"
+            )
+            return EXIT_OK
+        # get/set of a non-global key needs a workspace.
+        raise _workspace_key_outside_repo(args.key)
 
     ctx = load_repo()
     cfg = ctx.cfg
@@ -84,9 +115,7 @@ def run(args: argparse.Namespace) -> int:
     if args.action == "list":
         _print_list(cfg)
         ui.info("")
-        ui.heading("machine settings (global):")
-        for key in sorted(global_prefs.GLOBAL_KEYS):
-            ui.info(f"{key} = {str(global_prefs.get(key)).lower()}")
+        _print_global()
         return EXIT_OK
     if args.action == "get":
         if not args.key:

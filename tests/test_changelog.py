@@ -39,3 +39,35 @@ def test_release_for_normalizes_tag(monkeypatch):
     monkeypatch.setattr(cl, "_api", fake_api)
     cl.release_for("1.2.0")
     assert seen["path"] == "releases/tags/v1.2.0"
+
+
+_BODY_WITH_HL = (
+    f"{cl._HL_START}\n## Highlights\n\nNice summary.\n\n### New\n- **jp open** — opens the UI.\n"
+    f"{cl._HL_END}\n\n## [1.2.0]\n### Features\n* a ([abc123])\n* b ([def456])\n"
+)
+
+
+def test_highlights_extracts_block():
+    hl = cl.highlights(_BODY_WITH_HL)
+    assert "Nice summary." in hl
+    assert "jp open" in hl
+    assert cl._HL_START not in hl and "abc123" not in hl
+
+
+def test_highlights_none_when_absent():
+    assert cl.highlights("## [1.1.0]\n### Features\n* x") is None
+
+
+def test_render_shows_only_highlights_by_default(capsys):
+    cl.render(cl.Release(tag="v1.2.0", name="1.2.0", body=_BODY_WITH_HL))
+    out = capsys.readouterr().out
+    assert "Nice summary." in out and "jp open" in out
+    assert "abc123" not in out  # the noisy commit list is hidden
+    assert cl._HL_START not in out  # markers never shown
+
+
+def test_render_full_shows_whole_body(capsys):
+    cl.render(cl.Release(tag="v1.2.0", name="1.2.0", body=_BODY_WITH_HL), full=True)
+    out = capsys.readouterr().out
+    assert "abc123" in out  # full body includes the commit list
+    assert cl._HL_START not in out  # markers still stripped from display
