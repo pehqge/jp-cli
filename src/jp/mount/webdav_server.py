@@ -36,6 +36,7 @@ save actually reaches us. None of this changes read-only behavior.
 from __future__ import annotations
 
 import hmac
+import re
 import secrets
 import sys
 import threading
@@ -60,9 +61,6 @@ from ..remote_fs import (
 _MUTATING = ("PUT", "DELETE", "MKCOL", "MOVE", "COPY", "PROPPATCH", "LOCK", "UNLOCK")
 # Verbs that remain 403 in BOTH modes (writable does not enable these).
 _ALWAYS_FORBIDDEN = ("COPY",)
-
-# ElementTree namespace prefix for the DAV: namespace.
-_DAV_NS = "{DAV:}"
 
 
 def _etag(size: int, mtime: float) -> str:
@@ -591,40 +589,30 @@ class _DavRequestHandler(BaseHTTPRequestHandler):
 
     @staticmethod
     def _parse_proppatch_prop_names(body: bytes) -> list[str]:
-        """Extract qualified prop element names under ``<set><prop>``.
+        """Extract the prop element names under ``<set><prop>`` WITHOUT an XML
+        parser.
 
-        Refuses DOCTYPE (XXE / billion-laughs guard, matching PROPFIND), and
-        swallows parse errors -- a malformed body just yields the generic 200.
+        Feeding untrusted XML to a parser risks entity-expansion / XXE, and
+        ``defusedxml`` is unavailable (jp ships zero deps). Both attacks require a
+        ``<!DOCTYPE`` with entity declarations, so we reject any DOCTYPE and then
+        pull the names with a narrow regex over the now entity-free body. A
+        non-match yields the generic 200 OK propstat. DAV-prefixed names keep the
+        ``D:`` prefix (our response declares ``xmlns:D``); any foreign prefix is
+        dropped to a bare local name so the response stays well-formed.
         """
         if not body or b"<!DOCTYPE" in body.upper():
             return []
-        import xml.etree.ElementTree as ET  # stdlib, lazy import
-
-        try:
-            root = ET.fromstring(body)
-        except ET.ParseError:
-            return []
+        text = body.decode("utf-8", "replace")
         names: list[str] = []
-        # Find every <D:prop> under a <D:set> and collect its children's tags.
-        for setel in root.iter(f"{_DAV_NS}set"):
-            for propel in setel.iter(f"{_DAV_NS}prop"):
-                for child in propel:
-                    names.append(_qualify_tag(child.tag))
+        for block in re.findall(r"<\w*:?prop\b[^>]*>(.*?)</\w*:?prop\s*>", text, re.S | re.I):
+            for tag in re.findall(r"<([A-Za-z_][\w.\-]*(?::[A-Za-z_][\w.\-]*)?)\b", block):
+                prefix, _, local = tag.partition(":")
+                if not local:  # the tag had no prefix
+                    prefix, local = "", prefix
+                if local.lower() in ("prop", "set", "propertyupdate"):
+                    continue
+                names.append(f"D:{local}" if prefix.lower() in ("d", "dav") else local)
         return names
-
-
-def _qualify_tag(tag: str) -> str:
-    """Turn a ``{namespace}local`` ElementTree tag into a ``D:local`` name.
-
-    DAV-namespaced tags become ``D:local``; anything else falls back to the
-    local name only (without a prefix) since we don't track foreign prefixes.
-    """
-    if tag.startswith("{"):
-        ns, _, local = tag[1:].partition("}")
-        if ns == "DAV:":
-            return f"D:{local}"
-        return local
-    return tag
 
 
 def _make_mutating_handler(method: str) -> Any:
