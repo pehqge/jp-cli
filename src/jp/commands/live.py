@@ -338,7 +338,10 @@ def _serve(
             recorded = True
         _install_signal_stop()
 
-        _print_live_banner(prefix=prefix, writable=writable, display=handle.display, url=url)
+        program = os.path.basename(sys.argv[0] or "jp") or "jp"
+        _print_live_banner(
+            prefix=prefix, writable=writable, display=handle.display, url=url, program=program
+        )
         _keepalive_loop(cached)
         return EXIT_OK
     except os_mount.MountError as exc:
@@ -426,19 +429,38 @@ def _open_in_code(
     return path
 
 
-def _print_live_banner(*, prefix: str, writable: bool, display: str, url: str) -> None:
-    """The clean, scannable post-mount status block (no secret URL in scrollback)."""
+def _clear_screen() -> None:
+    """Clear the terminal (screen + scrollback) so only the live banner remains.
+
+    No-op when not writing to a real terminal, so piped output and tests never
+    see escape codes.
+    """
+    if sys.stdout.isatty():
+        sys.stdout.write("\033[2J\033[3J\033[H")
+        sys.stdout.flush()
+
+
+def _print_live_banner(
+    *, prefix: str, writable: bool, display: str, url: str, program: str = "jp"
+) -> None:
+    """The emphasized post-mount status block. Clears the selector first so the
+    only thing on screen is the running mount (no secret URL in scrollback)."""
+    _clear_screen()
     access = "writable" if writable else "read-only"
     ui.out("")
-    ui.success(f"{prefix}  ·  {access}")
-    ui.detail(f"  mounted   {display}")
+    # Make success unmistakable: green check + bold "MOUNTED" + the local path.
+    ui.success(f"MOUNTED  ·  {prefix}  ·  {access}")
+    ui.heading(f"   {display}")
+    ui.detail("   this local folder IS your remote folder -- edit it normally")
     ui.out("")
-    ui.detail("  server-side changes appear when a file is re-read (no live push)")
-    ui.detail(f'  live output   jp terminal "{url}"')
+    ui.detail("   server-side changes appear when a file is re-read (no live push)")
+    ui.detail(f'   live shell    {program} terminal "{url}"')
     if writable:
         ui.warn("writable -- edits & deletes reach the server, no undo. keep a backup.")
     ui.out("")
-    ui.detail("  stop   Ctrl-C   ·   or  jp live unmount  (from the mounted folder)")
+    # Emphasize that it is running and must stay open.
+    ui.success("running -- leave this terminal open.")
+    ui.detail(f"   stop   Ctrl-C   ·   or  {program} live unmount  (from the folder)")
     ui.out("")
 
 
