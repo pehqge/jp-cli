@@ -99,9 +99,9 @@ After mounting, `jp live` prints:
 | --- | --- | --- | --- |
 | Mount + edit files | folder `./leaf/` | folder `./leaf/` (symlink→gvfs) | drive `Z:` |
 | Write/read prompt, credential picker, workspace guard | ✅ | ✅ | ✅ |
-| `jp terminal <URL>` standalone | ✅ PTY | ✅ PTY | ⚠️ web fallback (Win-PTY = follow-up) |
+| `jp terminal <URL>` standalone | ✅ PTY | ✅ PTY | ✅ PTY (VT console; web fallback pre-Win10 1511) |
 | `--code` opens VS Code | `open -a` | `code` / `vscode://` URI | `code` / `vscode://` URI |
-| `--code` integrated remote shell | ✅ | ✅ | ⚠️ web fallback |
+| `--code` integrated remote shell | ✅ | ✅ | ✅ (web fallback pre-Win10 1511) |
 
 The auto handle is named after the **prefix leaf**: `privado/jp-live-test`
 mounts under `./jp-live-test/` (macOS/Linux) or the first free drive letter
@@ -117,8 +117,10 @@ mounts under `./jp-live-test/` (macOS/Linux) or the first free drive letter
 3. opens it in VS Code (macOS: `open -a "Visual Studio Code"`; else the `code`
    CLI if on PATH; else the `vscode://file/...` URI; else it prints the path),
 4. VS Code shows a one-time **"Allow Automatic Tasks"** prompt and then runs
-   `jp terminal "<URL>"` in an integrated terminal (a real PTY on macOS/Linux; a
-   web-terminal fallback on Windows until the Windows-PTY follow-up ships).
+   `jp terminal "<URL>"` in an integrated terminal — a real raw remote shell on
+   macOS, Linux **and** Windows (the Windows path drives the console's
+   virtual-terminal modes directly; on a Windows too old for VT, pre-Win10 1511,
+   it falls back to the Jupyter web terminal).
 
 On exit, the `.code-workspace` file `jp` created is removed along with the mount.
 

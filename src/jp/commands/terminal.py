@@ -15,8 +15,14 @@ Safety (this command is paranoid by design -- the server is shared):
   * The token travels only in the ``Authorization`` header on the websocket
     handshake -- never in a URL.
 
-POSIX only: it needs ``termios``/``tty`` for raw mode. On Windows (no termios) it
-falls back to opening the Jupyter web UI so the user can use New -> Terminal.
+Cross-platform raw mode: POSIX uses ``termios``/``tty`` + ``select``. Windows has
+no termios, so we drive the console directly via ``ctypes`` -- enabling the
+virtual-terminal console modes (``ENABLE_VIRTUAL_TERMINAL_INPUT`` on stdin so
+keystrokes arrive as VT sequences, ``ENABLE_VIRTUAL_TERMINAL_PROCESSING`` on
+stdout so the server's ANSI renders) and proxying with two threads (the console
+input handle is not ``select``-able). On a Windows too old for VT (pre-Win10
+1511) we fall back to opening the Jupyter web UI. Zero third-party dependencies
+on every platform.
 """
 
 from __future__ import annotations
@@ -29,6 +35,7 @@ import select
 import shlex
 import signal
 import sys
+import threading
 
 from .. import config as config_mod
 from .. import paths, ui
@@ -141,10 +148,13 @@ def run(args: argparse.Namespace) -> int:
     else:
         cfg = load_repo().cfg
 
+    is_tty = sys.stdin.isatty() and sys.stdout.isatty()
     if not _HAS_PTY:
-        return _browser_fallback(args, cfg)
-
-    if not (sys.stdin.isatty() and sys.stdout.isatty()):
+        # Windows: drive the console via the VT modes when we can; otherwise (no
+        # tty, or a Windows too old for virtual-terminal) open the web UI.
+        if not is_tty or not _windows_console_supported():
+            return _browser_fallback(args, cfg)
+    elif not is_tty:
         raise UsageError("jp terminal needs an interactive terminal (a tty).")
 
     api = _context.build_api(cfg)
@@ -176,7 +186,10 @@ def run(args: argparse.Namespace) -> int:
         try:
             ui.info("connected -- press Ctrl-D (or type 'exit') to close the remote shell.")
             do_cd = cwd is not None and not session.cwd_applied
-            _run_pty(ws, prefix=prefix, do_cd=do_cd)
+            if _HAS_PTY:
+                _run_pty(ws, prefix=prefix, do_cd=do_cd)
+            else:
+                _run_console_windows(ws, prefix=prefix, do_cd=do_cd)
         finally:
             ws.close()
     finally:
@@ -290,14 +303,137 @@ def _send_winsize(ws: WebSocket, fd: int) -> None:
 
 
 # --------------------------------------------------------------------------- #
-# Windows fallback: open the Jupyter web UI (no termios -> no raw PTY)
+# Windows console backend (no termios): drive the VT console modes via ctypes
+# and proxy with two threads (the console input handle is not select-able).
+# Flag values are from Microsoft's SetConsoleMode docs.
+# --------------------------------------------------------------------------- #
+_ENABLE_PROCESSED_INPUT = 0x0001
+_ENABLE_LINE_INPUT = 0x0002
+_ENABLE_ECHO_INPUT = 0x0004
+_ENABLE_VIRTUAL_TERMINAL_INPUT = 0x0200
+_ENABLE_PROCESSED_OUTPUT = 0x0001
+_ENABLE_VIRTUAL_TERMINAL_PROCESSING = 0x0004
+_STD_INPUT_HANDLE = -10
+_STD_OUTPUT_HANDLE = -11
+_CP_UTF8 = 65001
+
+
+def _raw_console_input_mode(old: int) -> int:
+    """Raw input: char-at-a-time, no echo, Ctrl-C forwarded, keys as VT seqs."""
+    cooked = _ENABLE_LINE_INPUT | _ENABLE_ECHO_INPUT | _ENABLE_PROCESSED_INPUT
+    return (old & ~cooked) | _ENABLE_VIRTUAL_TERMINAL_INPUT
+
+
+def _vt_console_output_mode(old: int) -> int:
+    """Output: render the server's ANSI/VT escape sequences in place."""
+    return old | _ENABLE_PROCESSED_OUTPUT | _ENABLE_VIRTUAL_TERMINAL_PROCESSING
+
+
+def _windows_console_supported() -> bool:
+    """True if VT processing can be enabled on this console (Windows 10 1511+)."""
+    try:
+        import ctypes
+
+        k = ctypes.windll.kernel32  # type: ignore[attr-defined]
+        h = k.GetStdHandle(_STD_OUTPUT_HANDLE)
+        mode = ctypes.c_uint32()
+        if not k.GetConsoleMode(h, ctypes.byref(mode)):
+            return False
+        if not k.SetConsoleMode(h, _vt_console_output_mode(mode.value)):
+            return False
+        k.SetConsoleMode(h, mode.value)  # restore immediately
+        return True
+    except Exception:
+        return False
+
+
+def _console_size(fd: int) -> tuple[int, int]:
+    """(cols, rows) of the console, defaulting to (80, 24)."""
+    try:
+        s = os.get_terminal_size(fd)
+        return (s.columns, s.lines)
+    except OSError:
+        return (80, 24)
+
+
+def _run_console_windows(ws: WebSocket, *, prefix: str, do_cd: bool) -> None:
+    """Proxy the local Windows console to the terminado websocket.
+
+    Output runs on this (main) thread so a remote-side close ends the session
+    cleanly; a daemon thread forwards keystrokes and closes the ws on Ctrl-D
+    (EOF) or the Ctrl-] escape. Console modes and code pages are always restored.
+    The console input handle is not ``select``-able, hence the reader thread; the
+    websocket IS a socket, so the output side selects on it with a short timeout
+    to also poll for window-size changes (Windows has no SIGWINCH).
+    """
+    import ctypes
+
+    k = ctypes.windll.kernel32  # type: ignore[attr-defined]
+    hin = k.GetStdHandle(_STD_INPUT_HANDLE)
+    hout = k.GetStdHandle(_STD_OUTPUT_HANDLE)
+    in_mode = ctypes.c_uint32()
+    out_mode = ctypes.c_uint32()
+    k.GetConsoleMode(hin, ctypes.byref(in_mode))
+    k.GetConsoleMode(hout, ctypes.byref(out_mode))
+    old_in_cp = k.GetConsoleCP()
+    old_out_cp = k.GetConsoleOutputCP()
+
+    stdin_fd = sys.stdin.fileno()
+    stdout_fd = sys.stdout.fileno()
+
+    k.SetConsoleMode(hin, _raw_console_input_mode(in_mode.value))
+    k.SetConsoleMode(hout, _vt_console_output_mode(out_mode.value))
+    k.SetConsoleCP(_CP_UTF8)
+    k.SetConsoleOutputCP(_CP_UTF8)
+
+    def _feed_input() -> None:
+        while not ws.closed:
+            try:
+                data = os.read(stdin_fd, 65536)
+            except OSError:
+                data = b""
+            if not data or _ESCAPE in data:
+                with contextlib.suppress(Exception):
+                    ws.close()  # unblock the output loop -> clean exit
+                return
+            with contextlib.suppress(Exception):
+                ws.send_text(stdin_message(data))
+
+    reader = threading.Thread(target=_feed_input, name="jp-term-in", daemon=True)
+    try:
+        _send_winsize(ws, stdout_fd)
+        if do_cd:
+            ws.send_text(stdin_message(cd_command(prefix).encode("utf-8")))
+        last_size = _console_size(stdout_fd)
+        reader.start()
+        while not ws.closed:
+            try:
+                readable, _, _ = select.select([ws.fileno()], [], [], 0.2)
+            except OSError:
+                break
+            if readable and _pump_output(ws, stdout_fd):
+                break
+            size = _console_size(stdout_fd)
+            if size != last_size:
+                last_size = size
+                with contextlib.suppress(Exception):
+                    ws.send_text(setsize_message(size[1], size[0]))
+    finally:
+        k.SetConsoleMode(hin, in_mode.value)
+        k.SetConsoleMode(hout, out_mode.value)
+        k.SetConsoleCP(old_in_cp)
+        k.SetConsoleOutputCP(old_out_cp)
+
+
+# --------------------------------------------------------------------------- #
+# Deep fallback: open the Jupyter web UI (no tty, or a Windows too old for VT)
 # --------------------------------------------------------------------------- #
 def _browser_fallback(args: argparse.Namespace, cfg: config_mod.Config) -> int:
     import webbrowser
 
     from . import kernel
 
-    ui.warn("jp terminal needs a POSIX terminal (termios); it is not supported on this platform.")
+    ui.warn("could not open a raw terminal here (no tty, or a Windows too old for VT).")
     ui.info("Opening the Jupyter web UI instead -- use New -> Terminal there.")
 
     if not args.yes:
