@@ -47,9 +47,25 @@ def server(tmp_path):
 
 
 def _request(server, method, path, body=None, headers=None):
+    # The server now serves only under a per-session secret segment; a real
+    # mount client requests under server.url. Prepend the secret so the existing
+    # behavioural tests keep using bare paths like "/a.txt".
+    prefix = f"/{server.secret}" if server.secret else ""
     conn = http.client.HTTPConnection(server.host, server.port, timeout=5)
     try:
-        conn.request(method, path, body=body, headers=headers or {})
+        conn.request(method, prefix + path, body=body, headers=headers or {})
+        resp = conn.getresponse()
+        data = resp.read()
+        return resp.status, dict(resp.getheaders()), data
+    finally:
+        conn.close()
+
+
+def _raw_request(server, method, path, headers=None):
+    """Hit a literal path WITHOUT the secret prefix (for the capability tests)."""
+    conn = http.client.HTTPConnection(server.host, server.port, timeout=5)
+    try:
+        conn.request(method, path, headers=headers or {})
         resp = conn.getresponse()
         data = resp.read()
         return resp.status, dict(resp.getheaders()), data
@@ -101,9 +117,8 @@ def test_mkcol_creates_dir(wserver):
 def test_move_renames(wserver):
     srv, root = wserver
     (root / "src.txt").write_text("x")
-    status, _, _ = _request(
-        srv, "MOVE", "/src.txt", headers={"Destination": "http://127.0.0.1/b.txt"}
-    )
+    # Destination echoes the secret the client received in our hrefs.
+    status, _, _ = _request(srv, "MOVE", "/src.txt", headers={"Destination": f"{srv.url}b.txt"})
     assert status in (201, 204)
     assert not (root / "src.txt").exists()
     assert (root / "b.txt").exists()
@@ -260,7 +275,7 @@ def test_context_manager(tmp_path):
 def test_head_no_body(server):
     conn = http.client.HTTPConnection(server.host, server.port, timeout=5)
     try:
-        conn.request("HEAD", "/a.txt")
+        conn.request("HEAD", f"/{server.secret}/a.txt")
         resp = conn.getresponse()
         data = resp.read()
         assert resp.status == 200
@@ -273,8 +288,73 @@ def test_head_no_body(server):
 def test_url_is_loopback(server):
     assert server.host == "127.0.0.1"
     assert server.port != 0
-    assert server.url == f"http://127.0.0.1:{server.port}/"
+    # url now carries the per-session secret segment.
+    assert server.url == f"http://127.0.0.1:{server.port}/{server.secret}/"
     assert os.path is not None  # keep os import meaningful even if env changes
+
+
+# --- capability secret: another local process that finds the port but not the
+# secret must not be able to read or write the mounted files ----------------
+
+
+def test_url_contains_random_secret(server):
+    import re
+
+    # 128-bit url-safe secret: long enough, and url-path-safe charset.
+    assert server.secret and len(server.secret) >= 20
+    assert re.fullmatch(r"[A-Za-z0-9_-]+", server.secret)
+
+
+def test_secret_survives_redaction(server):
+    # Regression: the mount URL must stay copy-pasteable. ui.redact() masks
+    # 32+ hex blobs as likely Jupyter tokens; the capability secret is
+    # deliberately url-safe (non-hex) so the printed mount command is usable.
+    from jp import ui
+
+    assert ui.redact(server.url) == server.url
+    assert "REDACTED" not in ui.redact(f"mount_webdav -S {server.url} /tmp/x")
+
+
+def test_get_without_secret_is_404(server):
+    # Bare path (no secret) -- simulates a local port-scanner -- must not read.
+    status, _, body = _raw_request(server, "GET", "/a.txt")
+    assert status == 404
+    assert b"hello world" not in body
+
+
+def test_propfind_without_secret_is_404(server):
+    status, _, body = _raw_request(server, "PROPFIND", "/", headers={"Depth": "1"})
+    assert status == 404
+    assert b"a.txt" not in body
+
+
+def test_wrong_secret_is_404(server):
+    wrong = "0" * 32
+    status, _, body = _raw_request(server, "GET", f"/{wrong}/a.txt")
+    assert status == 404
+    assert b"hello world" not in body
+
+
+def test_write_without_secret_is_blocked(wserver):
+    srv, root = wserver
+    status, _, _ = _raw_request(srv, "PUT", "/owned.txt", headers={"Content-Length": "0"})
+    assert status in (403, 404)  # writable gate or secret gate -- never written
+    assert not (root / "owned.txt").exists()
+
+
+def test_options_without_secret_still_ok(server):
+    # OPTIONS is exempt so the OS client can probe capabilities before mounting;
+    # it exposes nothing the open port did not already reveal.
+    status, headers, _ = _raw_request(server, "OPTIONS", "/")
+    assert status == 200
+    assert "PROPFIND" in headers.get("Allow", "")
+
+
+def test_propfind_hrefs_carry_secret(server):
+    # Children hrefs must include the secret so the client stays in the jail.
+    status, _, body = _request(server, "PROPFIND", "/", headers={"Depth": "1"})
+    assert status == 207
+    assert f"/{server.secret}/".encode() in body
 
 
 # --- macOS read-write mount handshake (writable mode only) ---------------

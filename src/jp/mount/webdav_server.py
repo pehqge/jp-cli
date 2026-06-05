@@ -13,6 +13,16 @@ non-empty directory is refused: this server NEVER recursive-deletes the remote.
 The agent's jail (enforced remote-side) is forwarded verbatim; this server
 never resolves paths itself.
 
+Loopback is not a per-user boundary: any local process that finds the ephemeral
+port could otherwise read (or, when writable, write) the mounted files. The
+server therefore serves only under a random per-session secret path segment --
+the mount URL is ``http://127.0.0.1:<port>/<secret>/`` -- and refuses any data
+request whose first path segment is not that secret with a flat 404. The secret
+rides inside the URL the OS mount client already carries, so it needs no auth
+negotiation (no prompt, no keychain) and works identically across mount_webdav,
+gio and net use. OPTIONS is exempt so clients can still probe capabilities; it
+exposes nothing the open port did not already reveal.
+
 macOS read-write mounts: macOS's built-in WebDAV client decides read-only vs
 read-write AT MOUNT TIME from the OPTIONS response. To mount read-WRITE it
 requires the server to advertise ``DAV: 1, 2`` (class 2 == locking), list the
@@ -25,6 +35,8 @@ save actually reaches us. None of this changes read-only behavior.
 
 from __future__ import annotations
 
+import hmac
+import secrets
 import threading
 import uuid
 from email.utils import formatdate
@@ -75,15 +87,42 @@ class _DavRequestHandler(BaseHTTPRequestHandler):
     def log_message(self, *args: Any) -> None:  # silence stderr access logs
         return
 
-    def _resolve_path(self) -> str:
-        """Map the request URL to a remote-relative path.
+    @property
+    def _secret(self) -> str | None:
+        return getattr(self.server, "secret", None)
 
-        Drops the query string, percent-decodes, and strips the leading "/".
-        The empty string denotes the fs root. No local resolution / jailing is
-        done here -- the agent enforces the jail and refuses traversal.
+    def _strip_secret(self, url_path: str) -> str | None:
+        """Decode a request/Destination URL path and remove the secret segment.
+
+        Returns the remote-relative path (``""`` denotes the fs root), or
+        ``None`` if the secret is required but absent/wrong. When the server has
+        no secret (``None``), gating is disabled and the decoded path is
+        returned verbatim -- used only by tests / the offline dry-run.
         """
-        raw = urlsplit(self.path).path
-        return unquote(raw).lstrip("/")
+        decoded = unquote(urlsplit(url_path).path).lstrip("/")
+        secret = self._secret
+        if secret is None:
+            return decoded
+        first, _sep, rest = decoded.partition("/")
+        # Constant-time compare: never branch on how many leading chars matched.
+        if not first or not hmac.compare_digest(first, secret):
+            return None
+        return rest
+
+    def _resolve_path(self) -> str | None:
+        """Map the request URL to a remote-relative path, enforcing the secret.
+
+        Drops the query string, percent-decodes, strips the leading "/", and
+        removes the per-session secret segment (see the module docstring). A
+        request that does not carry the secret is answered with a flat 404 here
+        and yields ``None`` -- callers must ``return`` immediately. The empty
+        string denotes the fs root. No local resolution / jailing is done here;
+        the agent enforces the jail and refuses traversal.
+        """
+        path = self._strip_secret(self.path)
+        if path is None:
+            self._send_error(404, b"not found")
+        return path
 
     def _read_body(self) -> bytes:
         """Read exactly ``Content-Length`` bytes (or b"" if absent/zero).
@@ -137,6 +176,8 @@ class _DavRequestHandler(BaseHTTPRequestHandler):
 
     def do_PROPFIND(self) -> None:
         path = self._resolve_path()
+        if path is None:
+            return
         depth = self.headers.get("Depth", "1")
         if depth == "infinity":
             depth = "1"
@@ -183,7 +224,11 @@ class _DavRequestHandler(BaseHTTPRequestHandler):
             self.wfile.write(payload)
 
     def _href_for(self, path: str, is_dir: bool) -> str:
-        href = "/" + quote(path)
+        # Hrefs must carry the secret segment so the client's follow-up requests
+        # (which navigate by href) stay under the capability path.
+        secret = self._secret
+        prefix = f"/{secret}" if secret else ""
+        href = prefix + "/" + quote(path)
         if is_dir and not href.endswith("/"):
             href += "/"
         return href
@@ -242,6 +287,8 @@ class _DavRequestHandler(BaseHTTPRequestHandler):
 
     def _serve_get(self, head_only: bool) -> None:
         path = self._resolve_path()
+        if path is None:
+            return
         try:
             st = self._fs.stat(path)
         except RemoteNotFound:
@@ -311,6 +358,8 @@ class _DavRequestHandler(BaseHTTPRequestHandler):
         body = self.rfile.read(length) if length > 0 else b""
 
         path = self._resolve_path()
+        if path is None:
+            return
         # Decide created (201) vs updated (204) by probing existence first.
         try:
             self._fs.stat(path)
@@ -340,6 +389,8 @@ class _DavRequestHandler(BaseHTTPRequestHandler):
             self._forbidden()
             return
         path = self._resolve_path()
+        if path is None:
+            return
         try:
             st = self._fs.stat(path)
         except RemoteNotFound:
@@ -376,6 +427,8 @@ class _DavRequestHandler(BaseHTTPRequestHandler):
             self._forbidden()
             return
         path = self._resolve_path()
+        if path is None:
+            return
         try:
             self._fs.mkdir(path)
         except RemoteExists:
@@ -402,11 +455,16 @@ class _DavRequestHandler(BaseHTTPRequestHandler):
             self._send_error(400, b"missing destination")
             return
         # Destination is an absolute URL or path; take the path component, decode
-        # it, and strip the leading "/" to match _resolve_path's convention. We do
-        # not jail it here on purpose: the agent re-jails BOTH rename endpoints
-        # remote-side (Agent._resolve_mutable), so this is forwarded verbatim.
-        dest_path = unquote(urlsplit(dest_header).path).lstrip("/")
+        # it, strip the leading "/" and the secret segment (a real client echoes
+        # the secret it received in our hrefs). We do not jail it here on purpose:
+        # the agent re-jails BOTH rename endpoints remote-side
+        # (Agent._resolve_mutable), so this is forwarded verbatim.
+        dest_path = self._strip_secret(dest_header)
         path = self._resolve_path()
+        if path is None or dest_path is None:
+            if path is not None:  # _resolve_path already sent 404 when it was None
+                self._send_error(404, b"not found")
+            return
         # Did the destination already exist? (created 201 vs overwritten 204)
         try:
             self._fs.stat(dest_path)
@@ -479,6 +537,9 @@ class _DavRequestHandler(BaseHTTPRequestHandler):
         # success or the save is treated as failed. Report each requested prop
         # as 200 OK (no-op). Fall back to a generic empty propstat 200 OK.
         path = self._resolve_path()
+        if path is None:
+            self._drain_body()
+            return
         body = self._read_body()
         propstats = self._proppatch_ok_propstats(body)
         href = self._href_for(path, is_dir=False)
@@ -568,10 +629,17 @@ class _DavHTTPServer(ThreadingHTTPServer):
     daemon_threads = True
     allow_reuse_address = True
 
-    def __init__(self, address: tuple[str, int], fs: Any, writable: bool = False) -> None:
+    def __init__(
+        self,
+        address: tuple[str, int],
+        fs: Any,
+        writable: bool = False,
+        secret: str | None = None,
+    ) -> None:
         super().__init__(address, _DavRequestHandler)
         self.fs = fs
         self.writable = writable
+        self.secret = secret
 
 
 class DavServer:
@@ -579,18 +647,30 @@ class DavServer:
 
     Read-only by default. Pass ``writable=True`` to enable the guarded write
     path (PUT/DELETE/MKCOL/MOVE); see the module docstring for the safety rules.
+
+    A random per-session ``secret`` path segment is generated by default and the
+    server refuses any data request that does not carry it (see the module
+    docstring). Pass ``secret=""`` ONLY for offline tests / the dry-run that hit
+    the server directly without an OS mount; an empty/None secret disables the
+    gate, which is unsafe on a shared machine.
     """
 
-    def __init__(self, fs: Any, *, writable: bool = False) -> None:
+    def __init__(self, fs: Any, *, writable: bool = False, secret: str | None = None) -> None:
         self._fs = fs
         self.writable = writable
+        # 128-bit secret unless the caller explicitly opts out with "".
+        # token_urlsafe (NOT token_hex): the user must SEE this secret to mount
+        # manually, but ui.redact() masks any 32+ hex blob as a likely Jupyter
+        # token. A url-safe value (~22 chars, non-hex) stays printable in the
+        # mount command while the redaction net still catches real tokens.
+        self.secret = secrets.token_urlsafe(16) if secret is None else (secret or None)
         self._httpd: _DavHTTPServer | None = None
         self._thread: threading.Thread | None = None
 
     def start(self) -> DavServer:
         if self._httpd is not None:
             return self
-        self._httpd = _DavHTTPServer(("127.0.0.1", 0), self._fs, self.writable)
+        self._httpd = _DavHTTPServer(("127.0.0.1", 0), self._fs, self.writable, self.secret)
         self._thread = threading.Thread(
             target=self._httpd.serve_forever, name="jp-dav", daemon=True
         )
@@ -621,7 +701,11 @@ class DavServer:
 
     @property
     def url(self) -> str:
-        return f"http://{self.host}:{self.port}/"
+        # Includes the per-session secret segment, so the OS mount client mounts
+        # the capability URL directly. With no secret (tests/dry-run) it is the
+        # bare loopback root.
+        suffix = f"{self.secret}/" if self.secret else ""
+        return f"http://{self.host}:{self.port}/{suffix}"
 
     def __enter__(self) -> DavServer:
         return self.start()
