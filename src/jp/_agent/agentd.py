@@ -213,7 +213,9 @@ class Agent:
         if os.path.isdir(target):
             return self._err(rid, E_ISDIR, "is a directory"), []
         length = max(0, min(int(length), MAX_READ))
-        fd = os.open(target, os.O_RDONLY)
+        # O_BINARY (Windows): without it os.open is TEXT mode, where a 0x1A byte
+        # is treated as EOF and CR/LF are translated -- corrupting binary reads.
+        fd = os.open(target, os.O_RDONLY | getattr(os, "O_BINARY", 0))
         try:
             # os.pread is POSIX-only; lseek+read is portable (the agent normally
             # runs on a Linux server, but the test suite exercises it on Windows).
@@ -247,7 +249,13 @@ class Agent:
         if not os.path.isdir(parent):
             raise FileNotFoundError(parent)
         tmp = os.path.join(parent, f".jp-tmp-{rid}-{os.getpid()}")
-        flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC | getattr(os, "O_NOFOLLOW", 0)
+        flags = (
+            os.O_WRONLY
+            | os.O_CREAT
+            | os.O_TRUNC
+            | getattr(os, "O_NOFOLLOW", 0)
+            | getattr(os, "O_BINARY", 0)  # Windows: avoid text-mode CR/LF translation
+        )
         fd = os.open(tmp, flags, 0o600)
         try:
             written = 0
