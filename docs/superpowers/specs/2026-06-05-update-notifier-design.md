@@ -102,8 +102,10 @@ auto-update; 4 adds changelog surfaces; 5 is the CI enrichment.
   `sys.argv[0]`/`shutil.which("jp")`/`sys.executable -m jp` fallback so it works
   under pipx/uv/pip and a frozen binary. Never waits on it.
 
-**New hidden subcommand `src/jp/commands/update_check.py`** (`jp _update-check`,
-registered with `help=argparse.SUPPRESS`):
+**New hidden command `src/jp/commands/update_check.py`** (`jp _update-check`,
+intercepted in `cli.main()` before argparse so it is never a visible/registered
+subcommand — `help=argparse.SUPPRESS` does not hide a subparser, it prints
+`==SUPPRESS==`):
 
 - `run()` — the background worker. Calls `update._latest_release_tag()`, writes
   `{last_check: now, latest, checked_version}` to the cache. If auto-update is
