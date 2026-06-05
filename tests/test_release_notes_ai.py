@@ -33,6 +33,6 @@ def test_build_prompt_includes_context():
 
 def test_call_gemini_parses_response(monkeypatch):
     fake = {"candidates": [{"content": {"parts": [{"text": "## Highlights\nStuff."}]}}]}
-    monkeypatch.setattr(rna, "_http_post_json", lambda url, body: fake)
+    monkeypatch.setattr(rna, "_http_post_json", lambda url, body, api_key=None: fake)
     out = rna.call_gemini("prompt", api_key="k", model="gemini-x")
     assert "Highlights" in out

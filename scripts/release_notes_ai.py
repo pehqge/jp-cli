@@ -60,11 +60,17 @@ def build_prompt(commits: str, diffstat: str, readme: str) -> str:
     )
 
 
-def _http_post_json(url: str, body: dict) -> dict:
+def _http_post_json(url: str, body: dict, api_key: str | None = None) -> dict:
+    headers = {"Content-Type": "application/json"}
+    # Pass the key in a header, never in the URL query string -- keeps it out of
+    # any URL that might be logged (the API accepts ?key= too, but x-goog-api-key
+    # is the safer equivalent).
+    if api_key:
+        headers["x-goog-api-key"] = api_key
     req = urllib.request.Request(
         url,
         data=json.dumps(body).encode("utf-8"),
-        headers={"Content-Type": "application/json"},
+        headers=headers,
         method="POST",
     )
     with urllib.request.urlopen(req, timeout=60) as resp:
@@ -72,9 +78,9 @@ def _http_post_json(url: str, body: dict) -> dict:
 
 
 def call_gemini(prompt: str, api_key: str, model: str) -> str:
-    url = f"{_GEMINI_BASE}/{model}:generateContent?key={api_key}"
+    url = f"{_GEMINI_BASE}/{model}:generateContent"
     body = {"contents": [{"parts": [{"text": prompt}]}]}
-    data = _http_post_json(url, body)
+    data = _http_post_json(url, body, api_key)
     return data["candidates"][0]["content"]["parts"][0]["text"].strip()
 
 
