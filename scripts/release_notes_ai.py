@@ -84,6 +84,10 @@ def call_gemini(prompt: str, api_key: str, model: str) -> str:
     return data["candidates"][0]["content"]["parts"][0]["text"].strip()
 
 
+def _gh(*args: str) -> str:
+    return subprocess.check_output(["gh", *args], text=True).strip()
+
+
 def _has_gh() -> bool:
     from shutil import which
 
@@ -119,11 +123,19 @@ def main(argv: list[str]) -> int:
         print(f"Gemini call failed ({exc}); skipping AI highlights.", file=sys.stderr)
         return 0
 
-    existing = ""
-    if _has_gh():
-        existing = _git("release", "view", new_tag, "--json", "body", "-q", ".body")
-    new_body = f"{existing}\n\n{highlights}".strip()
-    subprocess.run(["gh", "release", "edit", new_tag, "--notes", new_body], check=True)
+    if not _has_gh():
+        print("gh CLI not available; highlights generated but not appended:\n")
+        print(highlights)
+        return 0
+    # Append to the release body. Never fail the release on a gh error -- the
+    # highlights are a nice-to-have, not a release gate.
+    try:
+        existing = _gh("release", "view", new_tag, "--json", "body", "-q", ".body")
+        new_body = f"{existing}\n\n{highlights}".strip()
+        subprocess.run(["gh", "release", "edit", new_tag, "--notes", new_body], check=True)
+    except (subprocess.CalledProcessError, OSError) as exc:
+        print(f"gh release edit failed ({exc}); highlights not appended.", file=sys.stderr)
+        return 0
     print(f"Appended AI highlights to release {new_tag}.")
     return 0
 
