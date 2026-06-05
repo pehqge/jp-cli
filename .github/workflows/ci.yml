@@ -74,6 +74,10 @@ jobs:
       - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6
         with:
           python-version: "3.12"
+      # Upgrade pip first: the runner ships a pip that itself periodically picks
+      # up a CVE (e.g. PYSEC-2026-196 in pip 26.1.1), which pip-audit would
+      # otherwise report against the build environment and fail the job.
+      - run: python -m pip install --upgrade pip
       - run: python -m pip install -e ".[dev]" pip-audit
       # --skip-editable excludes the project's own editable install. Otherwise
       # pip-audit looks up jpsync==<just-bumped version> on PyPI, which is not
