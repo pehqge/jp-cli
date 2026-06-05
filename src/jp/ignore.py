@@ -40,6 +40,12 @@ class IgnoreSet:
         # Hard rule: the metadata dir is always ignored, first and unconditional.
         self._rules.append(_Rule(regex=_compile(f"{DOT_DIR}/**"), negate=False, dir_only=False))
         self._rules.append(_Rule(regex=_compile(DOT_DIR), negate=False, dir_only=True))
+        # Default rule: never sync `jp run`'s transient temp files. They are
+        # written into the mapped folder for the duration of a run and removed
+        # right after; this keeps a `jp pull` racing a run (or a temp file left
+        # behind by an abrupt disconnect) from ever pulling one down. Placed
+        # before user patterns so a `!` negation can still re-include if needed.
+        self._rules.append(_Rule(regex=_compile("__temp__.*"), negate=False, dir_only=False))
         for raw in patterns:
             rule = _parse_line(raw)
             if rule is not None:

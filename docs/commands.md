@@ -132,6 +132,57 @@ websocket handshake, never in a URL.
 
 Must be run inside a workspace.
 
+### `jp run <file> [args…]`
+Run a **local** script on the remote machine in the folder you're currently in —
+without `jp push`-ing it first. It's the fast loop for "edit locally, run
+remotely": ideal when you're iterating on a script in your editor against a
+remote kernel/box.
+
+How it works, and why it looks exactly like a local run:
+- Your file's *source* is uploaded to a temp file named
+  `__temp__.<name>.<random>.<ext>` **in the mapped folder for your current
+  directory** (workspace root → `<prefix>`, a subfolder → `<prefix>/<subfolder>`).
+  Being in that folder gives the script the same working directory, `sys.path`,
+  and relative-`open()` behavior as a local run. It is removed as soon as the
+  program exits.
+- For a **Python** file, a tiny bootstrap runs the source under the real name, so
+  `sys.argv[0]`, `__file__`, and tracebacks show `train.py` — not the temp file —
+  exactly like a local run. (Shebang scripts and non-Python interpreters show the
+  temp name; a minor cosmetic difference.)
+- The program runs inside a one-shot ephemeral terminal (like `jp terminal`)
+  whose command brackets the output with two unique marker control-sequences
+  (the FinalTerm / iTerm2 shell-integration technique). The client swallows the
+  shell prompt and the echoed command (everything before the start marker) and
+  stops at the end marker, which carries the exit code; the session then `exit`s,
+  so no prompt is shown before or after. You see only the program's output —
+  streamed live — never the remote shell.
+- The remote PTY echoes typed input, so `input()` behaves exactly like local
+  (what you type appears as you type it); Ctrl-C is forwarded to the program.
+- The exit code is propagated to `jp run` (so `jp run x.py && …` works).
+
+Safety / correctness:
+- **Never overwrites or deletes your data.** The temp name carries 128 bits of
+  randomness and is pre-checked for existence on the remote before upload;
+  cleanup deletes exactly that one file. No directory is ever created or removed,
+  so concurrent `jp run`s in different terminals can't clash. (The `__temp__.`
+  name is *not* hidden — the Contents API rejects dotfiles by default — but it is
+  auto-ignored by `jp` and removed right after the run.)
+- The interpreter is chosen from the file's **shebang**, else its **extension**
+  (`.py`→`python3`, `.sh`→`bash`, `.js`→`node`, `.rb`→`ruby`, `.R`→`Rscript`, …),
+  else `--as <interp>`.
+- Any **data files** the script opens must already exist on the remote — `jp run`
+  only ships the script itself; `jp push` the data first.
+
+Flags:
+- `--as <interp>` forces the interpreter (e.g. `--as python3` for an
+  extensionless file).
+- `--dry-run` prints the target folder, interpreter, and source without running
+  anything (and without creating a terminal).
+
+Requires a POSIX terminal (`termios`); macOS and Linux today. Windows support
+arrives together with the `jp terminal` Windows fix. Must be run inside a
+workspace (there is no URL mode).
+
 ## Inspection & configuration
 
 ### `jp ls [remote-path]`
