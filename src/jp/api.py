@@ -302,10 +302,19 @@ class Api:
                 out.append(self._to_entry(item))
         return out
 
-    def stat(self, api_path: str) -> RemoteEntry | None:
-        """Stat a single remote path without fetching content. None if missing."""
+    def stat(self, api_path: str, *, as_file: bool = False) -> RemoteEntry | None:
+        """Stat a single remote path without fetching content. None if missing.
+
+        ``as_file=True`` forces ``type=file`` so a notebook-pairing
+        ContentsManager (jupytext treats ``.md``/``.py``/``.Rmd``/... as
+        notebooks) reports the RAW byte ``size`` rather than the size of the
+        converted-notebook model. Callers that must distinguish a directory from
+        a file (``jp rm``) leave it False -- forcing type=file would both hide
+        the ``directory`` type and 400 on an actual directory.
+        """
+        query = "content=0&type=file" if as_file else "content=0"
         try:
-            data = self._request("GET", f"api/contents/{api_path}?content=0")
+            data = self._request("GET", f"api/contents/{api_path}?{query}")
         except ApiError as exc:
             if exc.status == 404:
                 return None
@@ -322,9 +331,17 @@ class Api:
         256``, ~0.1 s even at 20 MiB). Returns None if the path is missing
         (404), is a directory, or the server did not populate a sha256 hash
         (older servers). Callers fall back to a content download in that case.
+
+        We force ``type=file`` (like :meth:`get_file_bytes`) so the hash is taken
+        over the RAW bytes. Without it, a notebook-pairing ContentsManager
+        (jupytext, which by default treats ``.md``/``.py``/``.R``/``.Rmd``/...
+        as notebooks) would hash the converted-notebook model instead, so the
+        server sha256 would never equal the local sha256 of the raw file and the
+        file would be misclassified as a perpetual conflict -- silently breaking
+        push/pull for every jupytext-paired extension (the ``.md`` sync bug).
         """
         try:
-            data = self._request("GET", f"api/contents/{api_path}?content=0&hash=1")
+            data = self._request("GET", f"api/contents/{api_path}?content=0&hash=1&type=file")
         except ApiError as exc:
             if exc.status == 404:
                 return None

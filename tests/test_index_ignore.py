@@ -47,6 +47,16 @@ def test_ignore_always_ignores_dotjp(tmp_path):
     assert ig2.is_ignored(".jp/index.json")
 
 
+def test_ignore_default_ignores_jp_run_temp_files():
+    ig = IgnoreSet([])
+    # The temp files jp run writes into the mapped folder (__temp__.<name>.<hex>).
+    assert ig.is_ignored("__temp__.train.abc123def456.py")
+    assert ig.is_ignored("pkg/sub/__temp__.script.0011223344.sh")
+    # A normal file is unaffected.
+    assert not ig.is_ignored("train.py")
+    assert not ig.is_ignored("temp.py")
+
+
 def test_ignore_basic_patterns():
     ig = IgnoreSet(["*.log", "build/", "secret.txt"])
     assert ig.is_ignored("app.log")

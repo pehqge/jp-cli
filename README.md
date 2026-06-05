@@ -8,8 +8,9 @@
   <a href="https://github.com/pehqge/jpsync/actions/workflows/ci.yml"><img src="https://github.com/pehqge/jpsync/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
   <a href="https://pypi.org/project/jpsync/"><img src="https://img.shields.io/pypi/v/jpsync?color=blue&logo=pypi&logoColor=white" alt="PyPI version"></a>
   <img src="https://img.shields.io/badge/python-3.9%2B-blue?logo=python&logoColor=white" alt="Python 3.9+">
-  <a href="https://github.com/pehqge/jpsync/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-MIT-yellow" alt="License: MIT"></a>
+  <a href="https://github.com/pehqge/jpsync/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-Apache%202.0-blue" alt="License: Apache 2.0"></a>
   <img src="https://img.shields.io/badge/dependencies-zero-brightgreen" alt="Zero dependencies">
+  <a href="https://doi.org/10.5281/zenodo.20552614"><img src="https://zenodo.org/badge/DOI/10.5281/zenodo.20552614.svg" alt="DOI"></a>
   <a href="https://github.com/sponsors/pehqge"><img src="https://img.shields.io/badge/sponsor-%E2%9D%A4-db61a2?logo=githubsponsors&logoColor=white" alt="Sponsor"></a>
 </p>
 
@@ -111,22 +112,28 @@ pipx install "git+https://github.com/pehqge/jpsync"
 
 ### 2. Log in with `jp login`
 
-Run `jp login` and follow the prompts. It asks for a short name, walks you
-through getting the token, then you paste it (your input stays **hidden**).
-Credentials are saved **globally** by default (usable from anywhere); pass
-`--local` to keep it only in the current workspace:
+Run `jp login` and follow the prompts. It first asks for your Jupyter URL (so
+the credential is **linked to that server**), suggests a name from it, opens the
+token page in your browser, then you paste the token you generate (your input
+stays **hidden**). Credentials are saved **globally** by default (usable from
+anywhere); pass `--local` to keep it only in the current workspace:
 
 ```console
 $ jp login
-Name this server/credential (e.g. myserver): myserver
-To get a JupyterHub API token:
-  1. Open your JupyterHub in a browser and log in.
-  2. Go to the Token page (the 'Token' link, or <your-hub>/hub/token).
-  3. Click 'Request new API token' and copy it (it is shown only once).
+Paste your Jupyter URL (to link this credential to its server), or leave blank: https://jupyter.example.com/user/me/lab/tree/x
+Name this server/credential [me-jupyter.example.com]:
+Opening the token page to create an API token: https://jupyter.example.com/hub/token
+Open it in your browser now? [Y/n]: y
 
 Paste your API token (input hidden):
-✓ saved global credential 'myserver'
+✓ saved global credential 'me-jupyter.example.com'
 ```
+
+The URL is optional (leave it blank to skip the link); pass `--url <URL>` to
+supply it non-interactively, or `--no-browser` to not open the token page. The
+**site** (the server's `scheme://host`) is stored alongside the name so that,
+when you have several credentials, `jp` offers only the ones for the server
+you're working with.
 
 **Everything stays on your machine.** `jp` writes the token to a private file
 (permissions `600`) under `~/.config/jp/` (or the workspace's `.jp/` for a local
@@ -154,9 +161,11 @@ cd your-folder
 ```
 
 That creates a `your-folder/` folder with a `.jp/` workspace inside (like `.git/`)
-and downloads the remote tree. If you saved more than one credential, `jp` asks
-which one to use; with a single one it just uses it. The choice is remembered in
-the workspace (`jp clone … --credential <name>` to skip the prompt).
+and downloads the remote tree. `jp` looks at the URL's server and offers only the
+credentials saved for it: with a single match it just uses it; with several it
+shows a picker (press `a` to see all servers, `s` to link a site to a credential).
+The choice is remembered in the workspace (`jp clone … --credential <name>` to
+skip the prompt).
 
 ### 5. Work like git
 
@@ -203,6 +212,33 @@ on Windows) using the OS's built-in WebDAV client — no FUSE, no third-party
 deps. The mount is loopback-only and gated behind a per-session secret. Full
 guide and the cross-OS notes: [docs/jp-live.md](docs/jp-live.md).
 
+### Bonus: run a local script on the server — without pushing it
+
+Editing a script locally and want to run it remotely without `jp push` on every
+change? `jp run <file>` ships the *source* through an ephemeral terminal and runs
+it on the remote, in the same mapped folder you're standing in — so it behaves
+exactly like running it locally (relative `open()`, sibling `import`, `__file__`
+all resolve against that folder). The exit code is propagated.
+
+```bash
+jp run train.py --epochs 5      # from the workspace root -> runs in <prefix>
+jp run analyze.py               # from a subfolder -> runs in <prefix>/<subfolder>
+jp run cleanup.sh               # shebang/extension picks the interpreter
+jp run --as python3 script      # force the interpreter (e.g. extensionless file)
+jp run --dry-run train.py       # preview target folder + source, run nothing
+```
+
+The interpreter is chosen from the file's shebang, else its extension (`.py`,
+`.sh`, `.js`, `.rb`, `.R`, …), or `--as`. The script source is written to a temp
+file (`__temp__.<name>.<random>.<ext>`) *in that folder*, executed, then removed —
+only that one file is ever created or deleted, so concurrent `jp run`s never clash
+and your files are never overwritten. For Python, `sys.argv[0]`/`__file__`/
+tracebacks show the real name, not the temp file. You see only the program's
+output, streamed live — no remote shell prompt, and `input()` works just like
+locally. Any **data** files the script opens must already exist on the remote
+(`jp push` those first). POSIX only for now (macOS + Linux); Windows support lands
+with the `jp terminal` Windows fix.
+
 ---
 
 ## Command reference
@@ -211,21 +247,25 @@ guide and the cross-OS notes: [docs/jp-live.md](docs/jp-live.md).
 |---|---|
 | `jp clone <url> [dir]` | Clone a remote Jupyter folder into a new local directory. Accepts a `lab/tree` URL or `--base-url`/`--prefix`. |
 | `jp init <url>` | Turn the current folder into a jp workspace (no download). |
-| `jp login` | Save a named API-token credential (name the server, paste the token; defaults to global; use `--local` for workspace-only). |
+| `jp login` | Save a named API-token credential linked to its server (paste the Jupyter URL, name it, paste the token; defaults to global; use `--local` for workspace-only). |
+| `jp credentials` | List, edit, or delete saved credentials. No args opens an interactive manager (delete, set site, rename); `--list`, `--rm NAME`, `--rename OLD NEW`, `--set-site NAME URL` for scripting. |
 | `jp status` | Show local vs. remote differences. Read-only. |
 | `jp push` | Upload local changes. Additive by default. |
 | `jp pull` | Download remote changes. Additive by default. |
 | `jp diff [path]` | Show file-level differences. |
 | `jp ls [remote-path]` | List a remote directory (no local writes). |
 | `jp live <url>` | Mount a remote folder as a local folder over the kernel websocket — edit it in your own tools; changes travel to the server. Writable by default (confirmed); `--read-only` opts out. `--code` opens it in VS Code with a remote shell. `jp live unmount` (from inside) stops it; `jp live --defaults` sets the defaults. ([guide](docs/jp-live.md)) |
+| `jp open` | Open this workspace's folder (or the subfolder you're in) in the Jupyter web UI. Confirms first, shows the URL, and can copy instead of opening. Refuses folders jp never syncs (`.jp/`, hidden dot-names, `.jpignore` matches) since they aren't on the remote. Press `r` in the prompt to remember your choice (skip it next time); `jp open --ask` forgets it. Token-free URL; no network. |
 | `jp config` | Interactive settings editor (see below). Also `config get/set/list`. |
 | `jp ignore [pattern]` | Manage `.jpignore` patterns. |
 | `jp rm <path>` | Delete on the remote — gated, dry-run + typed confirmation. The only deleter. |
 | `jp kernel` | Set up a VS Code remote kernel to run notebooks in the right directory ([guide](docs/vscode-remote-cwd.md)). |
 | `jp terminal [url]` | Open the remote machine's shell in your terminal, in the workspace folder. With a `<url>` it works standalone (no workspace needed). Creates/deletes only an ephemeral terminal session; touches no files. |
+| `jp run <file> [args…]` | Run a local script on the remote in the current mapped folder, without pushing it. Interpreter from shebang/extension or `--as`; `--dry-run` to preview. Propagates the exit code. POSIX only. |
 | `jp doctor` | Diagnose token, connectivity, server status. |
 | `jp update` | Update jp to the latest version. |
-| `jp version` | Print the version (also `jp --version`). |
+| `jp changelog` | Show release notes (newer releases, a specific version, or `--all`). |
+| `jp version` | Print the version (`--changelog` also shows release notes; `jp --version`). |
 
 Global flags: `-q/--quiet`, `--no-color`. Every command has `--help`.
 
@@ -284,9 +324,13 @@ deletions are refused unless you pass `--yes`. Conflicts (both sides changed) ar
 interactive and **everything happens locally** — the token never leaves your
 machine and is never printed:
 
-- You give the credential a **name** (usually the server, e.g. `myserver`).
-- It shows you how to get a token, then prompts you to paste it with the input
-  **hidden** (no echo).
+- It first asks for your **Jupyter URL** and links the credential to that
+  server's **site** (`scheme://host`); the URL is optional (`--url` to supply it,
+  blank to skip).
+- You give the credential a **name** — prefilled from the URL (e.g.
+  `me-jupyter.example.com`), editable.
+- It opens the server's token page in your browser (`--no-browser` to skip), then
+  prompts you to paste the token with the input **hidden** (no echo).
 - The **scope** defaults to **global** (stored in `~/.config/jp/`, usable from
   any directory). Pass `--local` to store the credential only in the current
   workspace's `.jp/`.
@@ -305,9 +349,25 @@ jp login --token-stdin --name lab-gpu --local < token.txt
 ```
 
 When you `jp clone` / `jp init`, `jp` reads the credentials available **globally
-and locally**: with one it's used automatically, with several you pick which
-server to use (or pass `--credential <name>`). The choice is saved in the
-workspace so later `push`/`pull` just work.
+and locally** and matches them against the URL's server: with one match it's used
+automatically, with several you pick (or pass `--credential <name>`). In the
+picker, each credential shows its site; press `a` to toggle between this-server
+and all credentials, and `s` to link a site to one that has none. The choice is
+saved in the workspace so later `push`/`pull` just work.
+
+Manage saved credentials with **`jp credentials`** — run it with no arguments for
+an interactive manager (move with arrows; `d` delete, `s` set/replace site, `r`
+rename, `q` quit), or use flags for scripting:
+
+```bash
+jp credentials --list                                   # name, scope, site (no tokens)
+jp credentials --set-site myserver https://host/user/me # link/replace its site
+jp credentials --rename old new                          # rename
+jp credentials --rm myserver --force                    # delete (no prompt)
+```
+
+Legacy credentials saved before sites existed keep working — they have no site
+and match any server until you link one.
 
 At sync time the token is resolved, in order: `$JP_TOKEN` (a value, for CI) →
 `$JP_TOKEN_FILE` (a path) → the workspace's saved credential → legacy
@@ -323,6 +383,22 @@ jp update --check   # just check; don't install
 
 For a standalone binary install, `jp update` prints the one-line reinstall
 command for your OS.
+
+`jp` also checks for a newer release at most once a day, in the background, and
+shows a one-line notice next time you run a command — only in an interactive
+terminal, never in scripts, pipes, or CI:
+
+```
+jp 1.1.1 → 1.2.0  (update available)
+run `jp changelog` to see what's new · `jp update` to upgrade
+```
+
+- Turn the notice off: `export JP_NO_UPDATE_NOTIFIER=1` or `jp config set update_notifier false`.
+- Opt in to automatic updates: `jp config set auto_update true`. When on, `jp`
+  updates itself in the background between commands and tells you on the next run.
+  It never updates the running command mid-flight, and never in CI or dev installs.
+- See what changed: `jp changelog` (releases newer than yours), `jp changelog 1.2.0`
+  (a specific version), `jp changelog --all`, or `jp version --changelog`.
 
 ---
 
@@ -418,4 +494,4 @@ workflow, you can support its development — thank you! ☕
 
 ## License
 
-[MIT](LICENSE) © Pedro Gimenez
+[Apache 2.0](LICENSE) © Pedro Henrique Gimenez

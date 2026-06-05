@@ -8,8 +8,8 @@ dynamic = ["version"]
 description = "A git-like CLI to sync local folders with a remote JupyterHub via the Contents API."
 readme = "README.md"
 requires-python = ">=3.9"
-license = "MIT"
-license-files = ["LICENSE"]
+license = "Apache-2.0"
+license-files = ["LICENSE", "NOTICE"]
 authors = [{ name = "Pedro Gimenez", email = "pehqge@gmail.com" }]
 maintainers = [{ name = "Pedro Gimenez", email = "pehqge@gmail.com" }]
 keywords = ["jupyter", "jupyterhub", "cli", "sync", "contents-api", "notebook"]
@@ -18,7 +18,7 @@ classifiers = [
     "Environment :: Console",
     "Intended Audience :: Developers",
     "Intended Audience :: Science/Research",
-    "License :: OSI Approved :: MIT License",
+    "License :: OSI Approved :: Apache Software License",
     "Operating System :: OS Independent",
     "Programming Language :: Python",
     "Programming Language :: Python :: 3",
@@ -58,6 +58,7 @@ include = [
     "/docs",
     "/README.md",
     "/LICENSE",
+    "/NOTICE",
     "/CHANGELOG.md",
 ]
 

@@ -169,3 +169,31 @@ def test_access_requires_terminal_without_reader(monkeypatch):
     monkeypatch.setattr(tui, "interactive", lambda *a, **k: False)
     with pytest.raises(RuntimeError):
         tui.select_access(_MOUNT)
+
+
+# --- select_one / select_one_remember ------------------------------------
+
+
+def test_select_one_enter_returns_index():
+    assert tui.select_one(["a", "b", "c"], _reader=FakeReader(["down", "enter"])) == 1
+
+
+def test_select_one_esc_returns_none():
+    assert tui.select_one(["a", "b"], _reader=FakeReader(["esc"])) is None
+
+
+def test_select_one_ignores_remember_key():
+    # 'r' is not special for the plain picker -- it is ignored, not a selection.
+    assert tui.select_one(["a", "b"], _reader=FakeReader(["r", "enter"])) == 0
+
+
+def test_select_one_remember_enter_picks_once():
+    assert tui.select_one_remember(["a", "b"], _reader=FakeReader(["down", "enter"])) == (1, False)
+
+
+def test_select_one_remember_r_picks_and_remembers():
+    assert tui.select_one_remember(["a", "b"], _reader=FakeReader(["down", "r"])) == (1, True)
+
+
+def test_select_one_remember_esc_cancels():
+    assert tui.select_one_remember(["a", "b"], _reader=FakeReader(["esc"])) == (None, False)

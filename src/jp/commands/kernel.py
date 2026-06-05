@@ -17,12 +17,10 @@ directory. See ``docs/vscode-remote-cwd.md`` for the full explanation.
 from __future__ import annotations
 
 import argparse
-import shutil
-import subprocess
 import sys
 
+from .. import clipboard, ui
 from .. import config as config_mod
-from .. import ui
 from ..errors import EXIT_OK, SafetyError
 from ._context import load_repo
 
@@ -128,30 +126,8 @@ def connection_url(base_url: str, token: str) -> str:
 
 
 def _copy_to_clipboard(text: str) -> str | None:
-    """Best-effort, dependency-free clipboard copy.
-
-    Returns the tool name used, or ``None`` when no clipboard tool is available
-    (in which case the printed snippet is the fallback). Never raises.
-    """
-    if sys.platform == "darwin":
-        candidates = [["pbcopy"]]
-    elif sys.platform.startswith("win"):
-        candidates = [["clip"]]
-    else:  # Linux / *BSD: Wayland or X11, whichever is installed
-        candidates = [
-            ["wl-copy"],
-            ["xclip", "-selection", "clipboard"],
-            ["xsel", "--clipboard", "--input"],
-        ]
-    for cmd in candidates:
-        if shutil.which(cmd[0]) is None:
-            continue
-        try:
-            subprocess.run(cmd, input=text.encode("utf-8"), check=True)
-            return cmd[0]
-        except Exception:
-            continue
-    return None
+    """Best-effort, dependency-free clipboard copy (see :mod:`jp.clipboard`)."""
+    return clipboard.copy(text)
 
 
 def run(args: argparse.Namespace) -> int:

@@ -5,6 +5,13 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.1](https://github.com/pehqge/jpsync/compare/v1.1.0...v1.1.1) (2026-06-05)
+
+
+### Documentation
+
+* **terminal:** show jp terminal in the hero image and README ([c517f2e](https://github.com/pehqge/jpsync/commit/c517f2e6a2677b0d14c34c60f836338605e431bc))
+
 ## [1.1.0](https://github.com/pehqge/jpsync/compare/v1.0.1...v1.1.0) (2026-05-31)
 
 

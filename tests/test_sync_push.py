@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from conftest import write_file
+from conftest import FakeApi, write_file
 from jp import sync
 from jp.index import Entry
 from jp.sync import Change
@@ -214,3 +214,39 @@ def test_protect_roundtrip_restores_dotfile(repo, cfg, fake_api, index, ignore, 
     out = sync.pull(dest, pcfg, fake_api, Index.load(dest), IgnoreSet.from_root(dest))
     assert ".config/app.json" in out.transferred
     assert (dest / ".config/app.json").read_bytes() == b'{"k":1}'
+
+
+class _JupytextFakeApi(FakeApi):
+    """Models a server whose ContentsManager pairs text formats as notebooks
+    (jupytext default for .md/.py/.R/.Rmd/...). A plain stat/list reports the
+    CONVERTED-notebook size, but a byte-faithful ``type=file`` stat (as_file=True)
+    reports the real on-disk size. The pre-fix push verified its PUT with a plain
+    stat and tripped a false 'post-write size mismatch' on every markdown upload.
+    """
+
+    _PAIRED = (".md", ".py", ".R", ".Rmd", ".qmd", ".jl")
+
+    def _is_paired(self, api_path: str) -> bool:
+        name = api_path.rsplit("/", 1)[-1].lower()
+        return name.endswith(self._PAIRED)
+
+    def stat(self, api_path, *, as_file=False):
+        entry = super().stat(api_path, as_file=as_file)
+        if entry is not None and not as_file and self._is_paired(api_path):
+            # Notebook model is larger than the raw text -> bogus size.
+            entry.size = (entry.size or 0) + 4096
+        return entry
+
+
+def test_push_markdown_does_not_false_size_mismatch_on_jupytext_server(repo, cfg, index, ignore):
+    """Regression: a .md upload must succeed against a notebook-pairing server.
+
+    With the plain stat the server reports the converted-notebook size, so the
+    post-write size check would record a false failure and skip the index. The
+    fix verifies with as_file=True (type=file -> raw byte size)."""
+    api = _JupytextFakeApi()
+    write_file(repo, "notes.md", b"# Title\n\nhello\n")
+    out = sync.push(repo, cfg, api, index, ignore)
+    assert "notes.md" in out.transferred
+    assert out.failures == []
+    assert "notes.md" in index  # index updated only after a verified transfer

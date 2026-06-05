@@ -122,7 +122,7 @@ class FakeApi:
                 )
         return entries
 
-    def stat(self, api_path: str) -> RemoteEntry | None:
+    def stat(self, api_path: str, *, as_file: bool = False) -> RemoteEntry | None:
         if api_path in self.files:
             return RemoteEntry(
                 name=api_path.rsplit("/", 1)[-1],

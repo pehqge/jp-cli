@@ -413,15 +413,20 @@ def settings_menu(
 # --------------------------------------------------------------------------- #
 
 
-def select_one(labels: Sequence[str], title: str = "", _reader: object | None = None) -> int | None:
-    """Let the user pick one item from ``labels``. Returns the chosen index, or
-    None on cancel (Esc).
+def _select_core(
+    items: list[str],
+    title: str,
+    controls: str,
+    accel_keys: set[str],
+    _reader: object | None,
+) -> object:
+    """Arrow-key single-select loop shared by the pickers below.
 
-    Controls: Up/Down move · Enter select · Esc cancel.
-
-    ``_reader`` is a test seam (see :func:`settings_menu`).
+    Returns the chosen index on Enter, ``None`` on cancel (Esc/q), or a
+    ``(key, idx)`` tuple when one of ``accel_keys`` is pressed on a row -- this
+    lets a caller attach a shortcut (e.g. 'r' to pick *and* remember) without a
+    second menu row. ``controls`` is the dim hint line shown under the items.
     """
-    items = list(labels)
     if not items:
         return None
     if _reader is None and not interactive():
@@ -442,7 +447,7 @@ def select_one(labels: Sequence[str], title: str = "", _reader: object | None = 
             end = RESET if i == idx else ""
             lines.append(f"{cursor}{color}{label}{end}")
         lines.append("")
-        lines.append(f"{DIM}Up/Down move · Enter select · Esc cancel{RESET}")
+        lines.append(f"{DIM}{controls}{RESET}")
         prev_lines = _render_block(lines, prev_lines)
 
     _hide_cursor()
@@ -457,6 +462,325 @@ def select_one(labels: Sequence[str], title: str = "", _reader: object | None = 
                     idx = (idx + 1) % len(items)
                 elif key == "enter":
                     return idx
+                elif key in ("esc", "q", ""):
+                    return None
+                elif key in accel_keys:
+                    return (key, idx)
+    finally:
+        _show_cursor()
+
+
+def select_one(labels: Sequence[str], title: str = "", _reader: object | None = None) -> int | None:
+    """Let the user pick one item from ``labels``. Returns the chosen index, or
+    None on cancel (Esc).
+
+    Controls: Up/Down move · Enter select · Esc cancel.
+
+    ``_reader`` is a test seam (see :func:`settings_menu`).
+    """
+    result = _select_core(
+        list(labels),
+        title,
+        "Up/Down move · Enter select · Esc cancel",
+        set(),
+        _reader,
+    )
+    # No accel keys are configured, so the core never returns a tuple here.
+    return result  # type: ignore[return-value]
+
+
+def select_one_remember(
+    labels: Sequence[str], title: str = "", _reader: object | None = None
+) -> tuple[int | None, bool]:
+    """Pick one item, with a 'remember' shortcut.
+
+    Enter picks the highlighted item for this run only; pressing ``r`` picks it
+    *and* signals that the choice should be saved (don't ask again). Returns
+    ``(index, remember)``; ``(None, False)`` on cancel.
+    """
+    result = _select_core(
+        list(labels),
+        title,
+        "Up/Down move · Enter select · r remember & skip next time · Esc cancel",
+        {"r"},
+        _reader,
+    )
+    if result is None:
+        return (None, False)
+    if isinstance(result, tuple):  # ("r", idx) -- picked with remember
+        return (result[1], True)
+    return (result, False)  # plain Enter -- pick once
+
+
+# --------------------------------------------------------------------------- #
+# Credential selector (site-aware: filter by origin, set site inline)
+# --------------------------------------------------------------------------- #
+
+
+def select_credential(
+    creds: Sequence[object],
+    target_site: str = "",
+    on_set_site: Callable[[object, str], str] | None = None,
+    title: str = "",
+    _reader: object | None = None,
+) -> object | None:
+    """Pick one credential, returns the chosen object or None (Esc/cancel).
+
+    ``creds`` is a list of objects each exposing ``.name`` (str), ``.scope``
+    (str), and ``.site`` (str). Two view modes:
+
+    - ``'site'`` (default when ``target_site`` is set AND at least one cred
+      matches the filter): show only creds where ``site == ""`` (legacy
+      wildcard) or ``site.lower() == target_site.lower()``.
+    - ``'all'``: show every cred.
+
+    Key ``a`` toggles between the two modes (only meaningful when
+    ``target_site`` is set; otherwise always show all and ``a`` is a no-op).
+
+    Each row renders ``> name  (scope)  <site or '(no site)'>`` with the
+    highlighted row in CYAN like :func:`select_one`.
+
+    Key ``s`` on a highlighted cred whose ``.site == ""`` opens an inline text
+    prompt to paste a URL; the typed string is passed to
+    ``on_set_site(cred, raw) -> str`` which returns the stored origin (or ``""``
+    on failure). On non-empty return, ``cred.site`` is set in place and the view
+    re-filtered.
+
+    Up/Down (and ``k``/``j``) move, Enter selects (returns the highlighted
+    cred), Esc/``q`` cancels (returns None). ``_reader`` is the test seam (see
+    :func:`select_one`).
+    """
+    if _reader is None and not interactive():
+        raise RuntimeError("select_credential requires an interactive terminal")
+    rows = list(creds)
+    if not rows:
+        return None
+
+    def matches_site(c: object) -> bool:
+        site = getattr(c, "site", "") or ""
+        return site == "" or site.lower() == target_site.lower()
+
+    # Default to the filtered view only when target_site is set and it actually
+    # narrows things (at least one cred matches); otherwise show everything.
+    mode = "site" if target_site and any(matches_site(c) for c in rows) else "all"
+
+    idx = 0
+    prev_lines = 0
+
+    def visible() -> list[int]:
+        if mode == "site" and target_site:
+            return [i for i, c in enumerate(rows) if matches_site(c)]
+        return list(range(len(rows)))
+
+    def render() -> None:
+        nonlocal prev_lines
+        vis = visible()
+        lines: list[str] = []
+        if title:
+            lines.append(f"{BOLD}{title}{RESET}")
+            lines.append("")
+        for vi, i in enumerate(vis):
+            c = rows[i]
+            cursor = f"{CYAN}>{RESET} " if vi == idx else "  "
+            color = CYAN if vi == idx else ""
+            end = RESET if vi == idx else ""
+            site = getattr(c, "site", "") or ""
+            site_disp = site if site else f"{DIM}(no site){RESET}"
+            scope = getattr(c, "scope", "")
+            lines.append(f"{cursor}{color}{c.name}{end}  ({scope})  {site_disp}")
+        if not vis:
+            lines.append(f"  {DIM}(no credentials){RESET}")
+        lines.append("")
+        footer = f"{DIM}Up/Down move · Enter select · Esc cancel"
+        if target_site:
+            footer += " · a all/site"
+        if on_set_site is not None:
+            footer += " · s set site"
+        footer += RESET
+        lines.append(footer)
+        lines.append(f"{DIM}Manage saved credentials with: jp credentials{RESET}")
+        prev_lines = _render_block(lines, prev_lines)
+
+    def edit_site(reader: object, cred: object) -> None:
+        """Inline URL prompt; on commit, push through ``on_set_site``."""
+        nonlocal prev_lines
+        typed = ""
+        while True:
+            lines = [
+                "",
+                f"{CYAN}Paste a Jupyter URL to link this credential to its server:{RESET} {typed}",
+                "",
+                f"{DIM}Enter save · Esc cancel{RESET}",
+            ]
+            prev_lines = _render_block(lines, prev_lines)
+            key = reader.read_key()
+            if key == "enter":
+                origin = on_set_site(cred, typed)
+                if origin:
+                    cred.site = origin
+                return
+            if key in ("esc", ""):
+                return
+            if key == "backspace":
+                typed = typed[:-1]
+            elif len(key) == 1 and key.isprintable():
+                typed += key
+
+    _hide_cursor()
+    try:
+        with _reader if _reader is not None else _make_reader() as reader:
+            while True:
+                render()
+                vis = visible()
+                nvis = len(vis)
+                key = reader.read_key()
+                if key in ("up", "k"):
+                    idx = (idx - 1) % max(nvis, 1)
+                elif key in ("down", "j"):
+                    idx = (idx + 1) % max(nvis, 1)
+                elif key == "a" and target_site:
+                    mode = "all" if mode == "site" else "site"
+                    idx = 0
+                elif key == "s" and on_set_site is not None and vis:
+                    # Available for ANY highlighted cred: add a site to a legacy
+                    # cred, or overwrite an existing one.
+                    cred = rows[vis[idx]]
+                    edit_site(reader, cred)
+                    # Re-filter and clamp the cursor after a possible change.
+                    nvis = len(visible())
+                    idx = min(idx, nvis - 1) if nvis else 0
+                elif key == "enter":
+                    if vis:
+                        return rows[vis[idx]]
+                elif key in ("esc", "q", ""):
+                    return None
+    finally:
+        _show_cursor()
+
+
+# --------------------------------------------------------------------------- #
+# Credential manager (delete / set site / rename saved credentials)
+# --------------------------------------------------------------------------- #
+
+
+def credential_manager(
+    creds,
+    *,
+    on_delete,
+    on_set_site,
+    on_rename,
+    title: str = "",
+    _reader: object | None = None,
+) -> None:
+    """Interactive manager for saved credentials. Returns None.
+
+    ``creds`` is a mutable list of objects exposing ``.name`` (str), ``.scope``
+    (str), and ``.site`` (str). Rows render as ``name  (scope)  <site or
+    '(no site)'>`` with the highlighted row in CYAN.
+
+    Keys:
+      - Up/Down (``k``/``j``) move;
+      - ``d`` delete the highlighted cred via an inline ``Delete '<name>'?
+        [y/N]`` confirm; on ``y`` call ``on_delete(cred) -> bool`` and, if True,
+        remove it from ``creds`` (clamping the cursor);
+      - ``s`` set/replace the site via an inline URL prompt pushed through
+        ``on_set_site(cred, raw) -> str``; on a non-empty return set
+        ``cred.site``;
+      - ``r`` rename via an inline name prompt pushed through
+        ``on_rename(cred, newname) -> bool``; on True set ``cred.name``;
+      - ``q``/Esc save and quit (every action is persisted as it happens).
+
+    ``_reader`` is the test seam (see :func:`select_one`).
+    """
+    if _reader is None and not interactive():
+        raise RuntimeError("credential_manager requires an interactive terminal")
+
+    idx = 0
+    prev_lines = 0
+
+    def render(extra: str | None = None) -> None:
+        nonlocal prev_lines
+        lines: list[str] = []
+        if title:
+            lines.append(f"{BOLD}{title}{RESET}")
+            lines.append("")
+        if not creds:
+            lines.append(f"  {DIM}(no saved credentials){RESET}")
+        else:
+            for i, c in enumerate(creds):
+                cursor = f"{CYAN}>{RESET} " if i == idx else "  "
+                color = CYAN if i == idx else ""
+                end = RESET if i == idx else ""
+                site = getattr(c, "site", "") or ""
+                site_disp = site if site else f"{DIM}(no site){RESET}"
+                scope = getattr(c, "scope", "")
+                lines.append(f"{cursor}{color}{c.name}{end}  ({scope})  {site_disp}")
+        lines.append("")
+        if extra is not None:
+            lines.append(extra)
+            lines.append("")
+        lines.append(
+            f"{DIM}Up/Down move · d delete · s set site · r rename · q save and quit{RESET}"
+        )
+        prev_lines = _render_block(lines, prev_lines)
+
+    def prompt(reader: object, label: str) -> str | None:
+        """Inline text prompt. Returns the typed string on Enter, None on Esc."""
+        typed = ""
+        while True:
+            render(f"{CYAN}{label}{RESET} {typed}")
+            key = reader.read_key()
+            if key == "enter":
+                return typed
+            if key in ("esc", ""):
+                return None
+            if key == "backspace":
+                typed = typed[:-1]
+            elif len(key) == 1 and key.isprintable():
+                typed += key
+
+    def confirm_delete(reader: object, cred: object) -> None:
+        nonlocal idx
+        while True:
+            render(f"{CYAN}Delete {cred.name!r}? [y/N]{RESET}")
+            key = reader.read_key()
+            if key in ("y", "Y"):
+                if on_delete(cred):
+                    creds.remove(cred)
+                    if idx >= len(creds):
+                        idx = max(len(creds) - 1, 0)
+                return
+            if key in ("n", "N", "enter", "esc", ""):
+                return
+
+    _hide_cursor()
+    try:
+        with _reader if _reader is not None else _make_reader() as reader:
+            while True:
+                render()
+                key = reader.read_key()
+                if not creds:
+                    if key in ("esc", "q", ""):
+                        return None
+                    continue
+                if key in ("up", "k"):
+                    idx = (idx - 1) % len(creds)
+                elif key in ("down", "j"):
+                    idx = (idx + 1) % len(creds)
+                elif key == "d":
+                    confirm_delete(reader, creds[idx])
+                elif key == "s":
+                    cred = creds[idx]
+                    raw = prompt(reader, "Paste a Jupyter URL for this credential:")
+                    if raw:
+                        origin = on_set_site(cred, raw)
+                        if origin:
+                            cred.site = origin
+                elif key == "r":
+                    cred = creds[idx]
+                    newname = prompt(reader, "New name:")
+                    if newname and on_rename(cred, newname):
+                        cred.name = newname
                 elif key in ("esc", "q", ""):
                     return None
     finally:

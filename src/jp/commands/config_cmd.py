@@ -17,10 +17,23 @@ from __future__ import annotations
 import argparse
 
 from .. import config as config_mod
-from .. import credentials, tui, ui
+from .. import credentials, global_prefs, tui, ui
 from ..errors import EXIT_OK, UsageError
 from ..settings_schema import BY_KEY, SPECS
 from ._context import load_repo
+
+
+def _run_global(args: argparse.Namespace) -> int:
+    if args.action == "get":
+        ui.info(f"{global_prefs.get(args.key)}")
+        return EXIT_OK
+    if args.value is None:
+        raise UsageError("config set requires a key and a value")
+    value = global_prefs.coerce_bool(args.value)
+    global_prefs.set(args.key, value)
+    ui.success(f"set {args.key} = {str(value).lower()}")
+    return EXIT_OK
+
 
 # Connection fields shown as read-only context above the editable settings.
 _CONNECTION_KEYS = ("base_url", "prefix", "credential", "token_path")
@@ -59,12 +72,21 @@ def _print_list(cfg: config_mod.Config) -> None:
 
 
 def run(args: argparse.Namespace) -> int:
+    # Machine-wide preferences (notifier / auto-update) are handled before
+    # workspace resolution, so they work from any directory.
+    if args.action in ("get", "set") and args.key in global_prefs.GLOBAL_KEYS:
+        return _run_global(args)
+
     ctx = load_repo()
     cfg = ctx.cfg
 
     # --- scriptable paths ---------------------------------------------------
     if args.action == "list":
         _print_list(cfg)
+        ui.info("")
+        ui.heading("machine settings (global):")
+        for key in sorted(global_prefs.GLOBAL_KEYS):
+            ui.info(f"{key} = {str(global_prefs.get(key)).lower()}")
         return EXIT_OK
     if args.action == "get":
         if not args.key:

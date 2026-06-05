@@ -458,7 +458,10 @@ def push(
             # we sent. On mismatch, record a failure and do NOT update the index
             # (and never delete the local source).
             agreed_sha = sha256_bytes(data)
-            rentry = api.stat(remote_path)
+            # as_file=True: a jupytext server would otherwise report the
+            # converted-notebook size for a .md/.py file and trip a false
+            # "post-write size mismatch" on every such upload.
+            rentry = api.stat(remote_path, as_file=True)
             if rentry is not None and rentry.size is not None and rentry.size != len(data):
                 outcome.failures.append(
                     (rel, f"post-write size mismatch (sent {len(data)}, server {rentry.size})")

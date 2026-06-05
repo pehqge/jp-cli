@@ -1,0 +1,27 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite it using the metadata from this file."
+title: "jpsync: a git-like CLI to safely sync local folders with a remote JupyterHub"
+doi: "10.5281/zenodo.20552614"
+abstract: >-
+  jpsync (jp) is a zero-dependency, pure-Python command-line tool that keeps a
+  local folder in sync with a directory on a remote JupyterHub, the way git keeps
+  a working copy in sync with a remote. It is designed for research workflows on
+  shared GPU clusters: edit notebooks and scripts locally, push them up, run on
+  the server, and pull results back, without ever silently overwriting or
+  deleting remote files on a multi-user machine.
+type: software
+authors:
+  - given-names: "Pedro Henrique"
+    family-names: "Gimenez"
+    orcid: "https://orcid.org/0009-0003-6936-9447"
+    affiliation: "Universidade Federal de Santa Catarina (UFSC)"
+repository-code: "https://github.com/pehqge/jpsync"
+url: "https://github.com/pehqge/jpsync"
+license: Apache-2.0
+keywords:
+  - jupyter
+  - jupyterhub
+  - notebooks
+  - synchronization
+  - research-software
+  - cli
