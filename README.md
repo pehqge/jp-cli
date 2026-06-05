@@ -36,6 +36,7 @@ runs — macOS, Windows, Linux.
 ## Why jp?
 
 - **Git-like workflow** — `jp clone`, `jp status`, `jp push`, `jp pull`. Same muscle memory.
+- **Or skip the copy** — `jp live <url>` mounts the remote folder as a local folder you edit in place, and `jp terminal` drops you into a shell on the server. No SSH, no FUSE, no server-side install.
 - **Safe by default** — on a *shared* research machine, jp never deletes remote files unless you explicitly turn that on, and even then it asks you file-by-file. Conflicts are never silently overwritten.
 - **Zero dependencies** — one install, no dependency hell; ships as a wheel, a single `.pyz`, or a standalone binary.
 - **Cross-platform** — macOS, Windows, Linux; Python 3.9 → 3.13.
@@ -182,6 +183,26 @@ It only opens an ephemeral terminal session (it never touches your files), and
 the session is cleaned up when you exit. See the
 [command reference](docs/commands.md#remote-shell) for the details.
 
+### Bonus: edit the remote folder live (no clone)
+
+Don't want a local copy at all — just open the remote folder and edit it in
+place? `jp live <url>` mounts it as a normal folder on your machine over the same
+kernel transport. Reads and (by default) writes travel straight to the server.
+
+```bash
+jp live https://jupyter.example.com/user/<you>/lab/tree/your-folder
+# → confirms writable vs read-only, then mounts it under ./your-folder/
+#   edit with any tool; Ctrl-C (or `jp live unmount`) to stop.
+
+jp live <url> --code        # open it in VS Code with a remote shell wired up
+jp live <url> --read-only   # browse without any risk of writing
+```
+
+It mounts under one auto-managed handle (a folder on macOS/Linux, a drive letter
+on Windows) using the OS's built-in WebDAV client — no FUSE, no third-party
+deps. The mount is loopback-only and gated behind a per-session secret. Full
+guide and the cross-OS notes: [docs/jp-live.md](docs/jp-live.md).
+
 ---
 
 ## Command reference
@@ -196,11 +217,12 @@ the session is cleaned up when you exit. See the
 | `jp pull` | Download remote changes. Additive by default. |
 | `jp diff [path]` | Show file-level differences. |
 | `jp ls [remote-path]` | List a remote directory (no local writes). |
+| `jp live <url>` | Mount a remote folder as a local folder over the kernel websocket — edit it in your own tools; changes travel to the server. Writable by default (confirmed); `--read-only` opts out. `--code` opens it in VS Code with a remote shell. `jp live unmount` (from inside) stops it; `jp live --defaults` sets the defaults. ([guide](docs/jp-live.md)) |
 | `jp config` | Interactive settings editor (see below). Also `config get/set/list`. |
 | `jp ignore [pattern]` | Manage `.jpignore` patterns. |
 | `jp rm <path>` | Delete on the remote — gated, dry-run + typed confirmation. The only deleter. |
 | `jp kernel` | Set up a VS Code remote kernel to run notebooks in the right directory ([guide](docs/vscode-remote-cwd.md)). |
-| `jp terminal` | Open the remote machine's shell in your terminal, in the workspace folder. Creates/deletes only an ephemeral terminal session; touches no files. |
+| `jp terminal [url]` | Open the remote machine's shell in your terminal, in the workspace folder. With a `<url>` it works standalone (no workspace needed). Creates/deletes only an ephemeral terminal session; touches no files. |
 | `jp doctor` | Diagnose token, connectivity, server status. |
 | `jp update` | Update jp to the latest version. |
 | `jp version` | Print the version (also `jp --version`). |
