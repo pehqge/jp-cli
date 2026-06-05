@@ -86,11 +86,21 @@ def test_live_writable_warning_makes_no_checkpoint_promise():
     assert "backup" in lowered
 
 
-def test_dry_run_with_mount_prints_mount_command(tmp_path, capsys):
+def test_dry_run_with_mount_prints_mount_command(tmp_path, capsys, monkeypatch):
     (tmp_path / "f.txt").write_bytes(b"hi")
+    from jp.mount import os_mount
+
+    # Force the manual-instructions fallback so the test never performs a real
+    # mount and is platform-agnostic (the gio/net-use/mount_webdav argv differ).
+    def _boom(*a, **k):
+        raise os_mount.MountError("no mount tool in CI")
+
+    monkeypatch.setattr(os_mount, "mount", _boom)
+
     args = _dry_args(root=str(tmp_path), mount="/tmp/jpmnt")
     rc = live.run(args)
-    out = capsys.readouterr().out
+    cap = capsys.readouterr()
+    combined = cap.out + cap.err  # the warn goes to stderr
     assert rc == 0
-    assert "http://127.0.0.1:" in out  # the WebDAV url was printed
-    assert "/tmp/jpmnt" in out  # the mount command references the point
+    assert "http://127.0.0.1:" in cap.out  # the WebDAV url was printed
+    assert "mount it manually" in combined  # the fallback printed the manual command

@@ -215,7 +215,10 @@ class Agent:
         length = max(0, min(int(length), MAX_READ))
         fd = os.open(target, os.O_RDONLY)
         try:
-            data = os.pread(fd, length, max(0, int(offset)))
+            # os.pread is POSIX-only; lseek+read is portable (the agent normally
+            # runs on a Linux server, but the test suite exercises it on Windows).
+            os.lseek(fd, max(0, int(offset)), os.SEEK_SET)
+            data = os.read(fd, length)
         finally:
             os.close(fd)
         return {"rid": rid, "ok": True, "size": len(data)}, [data]

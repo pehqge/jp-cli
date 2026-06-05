@@ -12,9 +12,12 @@ odd value cannot break out of the string literal into executable code.
 
 from __future__ import annotations
 
-from pathlib import Path
+from importlib.resources import files
 
-_AGENT_SRC = (Path(__file__).resolve().parent / "_agent" / "agentd.py").read_text(encoding="utf-8")
+# Read the embedded agent source via importlib.resources so it works both from a
+# normal install AND from a zipapp (jp.pyz), where the package lives inside a zip
+# and a filesystem Path(__file__) read would raise NotADirectoryError.
+_AGENT_SRC = (files("jp._agent") / "agentd.py").read_text(encoding="utf-8")
 
 
 def build_bootstrap(*, root: str, target: str = "jp.fs", writable: bool = False) -> str:
