@@ -10,7 +10,7 @@
   <img src="https://img.shields.io/badge/python-3.9%2B-blue?logo=python&logoColor=white" alt="Python 3.9+">
   <a href="https://github.com/pehqge/jpsync/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-Apache%202.0-blue" alt="License: Apache 2.0"></a>
   <img src="https://img.shields.io/badge/dependencies-zero-brightgreen" alt="Zero dependencies">
-  <a href="https://doi.org/10.5281/zenodo.20552614"><img src="https://zenodo.org/badge/DOI/10.5281/zenodo.20552615.svg" alt="DOI"></a>
+  <a href="https://doi.org/10.5281/zenodo.20552614"><img src="https://zenodo.org/badge/DOI/10.5281/zenodo.20552614.svg" alt="DOI"></a>
   <a href="https://github.com/sponsors/pehqge"><img src="https://img.shields.io/badge/sponsor-%E2%9D%A4-db61a2?logo=githubsponsors&logoColor=white" alt="Sponsor"></a>
 </p>
 
