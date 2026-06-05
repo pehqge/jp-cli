@@ -549,6 +549,7 @@ def select_credential(
             footer += " · s set site"
         footer += RESET
         lines.append(footer)
+        lines.append(f"{DIM}Manage saved credentials with: jp credentials{RESET}")
         prev_lines = _render_block(lines, prev_lines)
 
     def edit_site(reader: object, cred: object) -> None:
@@ -602,6 +603,133 @@ def select_credential(
                 elif key == "enter":
                     if vis:
                         return rows[vis[idx]]
+                elif key in ("esc", "q", ""):
+                    return None
+    finally:
+        _show_cursor()
+
+
+# --------------------------------------------------------------------------- #
+# Credential manager (delete / set site / rename saved credentials)
+# --------------------------------------------------------------------------- #
+
+
+def credential_manager(
+    creds,
+    *,
+    on_delete,
+    on_set_site,
+    on_rename,
+    title: str = "",
+    _reader: object | None = None,
+) -> None:
+    """Interactive manager for saved credentials. Returns None.
+
+    ``creds`` is a mutable list of objects exposing ``.name`` (str), ``.scope``
+    (str), and ``.site`` (str). Rows render as ``name  (scope)  <site or
+    '(no site)'>`` with the highlighted row in CYAN.
+
+    Keys:
+      - Up/Down (``k``/``j``) move;
+      - ``d`` delete the highlighted cred via an inline ``Delete '<name>'?
+        [y/N]`` confirm; on ``y`` call ``on_delete(cred) -> bool`` and, if True,
+        remove it from ``creds`` (clamping the cursor);
+      - ``s`` set/replace the site via an inline URL prompt pushed through
+        ``on_set_site(cred, raw) -> str``; on a non-empty return set
+        ``cred.site``;
+      - ``r`` rename via an inline name prompt pushed through
+        ``on_rename(cred, newname) -> bool``; on True set ``cred.name``;
+      - ``q``/Esc quit.
+
+    ``_reader`` is the test seam (see :func:`select_one`).
+    """
+    if _reader is None and not interactive():
+        raise RuntimeError("credential_manager requires an interactive terminal")
+
+    idx = 0
+    prev_lines = 0
+
+    def render(extra: str | None = None) -> None:
+        nonlocal prev_lines
+        lines: list[str] = []
+        if title:
+            lines.append(f"{BOLD}{title}{RESET}")
+            lines.append("")
+        if not creds:
+            lines.append(f"  {DIM}(no saved credentials){RESET}")
+        else:
+            for i, c in enumerate(creds):
+                cursor = f"{CYAN}>{RESET} " if i == idx else "  "
+                color = CYAN if i == idx else ""
+                end = RESET if i == idx else ""
+                site = getattr(c, "site", "") or ""
+                site_disp = site if site else f"{DIM}(no site){RESET}"
+                scope = getattr(c, "scope", "")
+                lines.append(f"{cursor}{color}{c.name}{end}  ({scope})  {site_disp}")
+        lines.append("")
+        if extra is not None:
+            lines.append(extra)
+            lines.append("")
+        lines.append(f"{DIM}Up/Down move · d delete · s set site · r rename · q quit{RESET}")
+        prev_lines = _render_block(lines, prev_lines)
+
+    def prompt(reader: object, label: str) -> str | None:
+        """Inline text prompt. Returns the typed string on Enter, None on Esc."""
+        typed = ""
+        while True:
+            render(f"{CYAN}{label}{RESET} {typed}")
+            key = reader.read_key()
+            if key == "enter":
+                return typed
+            if key in ("esc", ""):
+                return None
+            if key == "backspace":
+                typed = typed[:-1]
+            elif len(key) == 1 and key.isprintable():
+                typed += key
+
+    def confirm_delete(reader: object, cred: object) -> None:
+        nonlocal idx
+        while True:
+            render(f"{CYAN}Delete {cred.name!r}? [y/N]{RESET}")
+            key = reader.read_key()
+            if key in ("y", "Y"):
+                if on_delete(cred):
+                    creds.remove(cred)
+                    if idx >= len(creds):
+                        idx = max(len(creds) - 1, 0)
+                return
+            if key in ("n", "N", "enter", "esc", ""):
+                return
+
+    _hide_cursor()
+    try:
+        with _reader if _reader is not None else _make_reader() as reader:
+            while True:
+                render()
+                key = reader.read_key()
+                if not creds:
+                    if key in ("esc", "q", ""):
+                        return None
+                    continue
+                if key in ("up", "k"):
+                    idx = (idx - 1) % len(creds)
+                elif key in ("down", "j"):
+                    idx = (idx + 1) % len(creds)
+                elif key == "d":
+                    confirm_delete(reader, creds[idx])
+                elif key == "s":
+                    cred = creds[idx]
+                    raw = prompt(reader, "Paste a Jupyter URL for this credential:")
+                    if raw:
+                        origin = on_set_site(cred, raw)
+                        if origin:
+                            cred.site = origin
+                elif key == "r":
+                    cred = creds[idx]
+                    newname = prompt(reader, "New name:")
+                    if newname and on_rename(cred, newname):
+                        cred.name = newname
                 elif key in ("esc", "q", ""):
                     return None
     finally:

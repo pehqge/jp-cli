@@ -218,6 +218,67 @@ def set_site(name: str, site: str, *, scope: str, root: Path | None = None) -> C
     )
 
 
+def _is_managed(scope_dir: Path, token_path: str) -> bool:
+    """True iff ``token_path`` lives inside this scope's ``credentials.d`` dir."""
+    managed_dir = scope_dir / TOKENS_DIRNAME
+    return managed_dir in Path(os.path.expanduser(token_path)).parents
+
+
+def remove(name: str, *, scope: str, root: Path | None = None) -> None:
+    """Delete credential ``name`` from ``scope``'s registry.
+
+    Also unlink its token file ONLY if that file lives inside this scope's
+    managed ``credentials.d`` dir; an externally-registered token path (via
+    :func:`add_path`) is left on disk. Raises :class:`UsageError` if ``name``
+    is absent in ``scope``.
+    """
+    scope_dir = _scope_dir(scope, root)
+    reg_path = _registry_path(scope_dir)
+    reg = _read_registry(reg_path)
+    creds = reg.get("credentials", {})
+    if name not in creds:
+        raise UsageError(f"no {scope} credential named {name!r}")
+    entry = creds.pop(name)
+    # Persist the registry first so a failed unlink never leaves a dangling row.
+    _save_registry(reg_path, reg)
+    token_path = str(entry.get("token_path", "")) if isinstance(entry, dict) else ""
+    if token_path and _is_managed(scope_dir, token_path):
+        with contextlib.suppress(OSError):
+            Path(os.path.expanduser(token_path)).unlink(missing_ok=True)
+
+
+def rename(old: str, new: str, *, scope: str, root: Path | None = None) -> Credential:
+    """Rename credential ``old`` -> ``new`` within ``scope``.
+
+    ``new`` is validated with :func:`validate_name` and must not already exist
+    in ``scope``. If the token file is managed (inside ``credentials.d``), it is
+    renamed to ``<new>.token`` and ``token_path`` updated; otherwise the
+    ``token_path`` is kept as-is. Returns the renamed :class:`Credential`.
+    Raises :class:`UsageError` if ``old`` is absent or ``new`` already exists.
+    """
+    new = validate_name(new)
+    scope_dir = _scope_dir(scope, root)
+    reg_path = _registry_path(scope_dir)
+    reg = _read_registry(reg_path)
+    creds = reg.get("credentials", {})
+    if old not in creds:
+        raise UsageError(f"no {scope} credential named {old!r}")
+    if new in creds:
+        raise UsageError(f"a {scope} credential named {new!r} already exists")
+    entry = creds.pop(old)
+    token_path = str(entry.get("token_path", "")) if isinstance(entry, dict) else ""
+    if token_path and _is_managed(scope_dir, token_path):
+        new_path = _token_file(scope_dir, new)
+        with contextlib.suppress(OSError):
+            Path(os.path.expanduser(token_path)).rename(new_path)
+            token_path = str(new_path)
+            entry["token_path"] = token_path
+    creds[new] = entry
+    _save_registry(reg_path, reg)
+    site = entry.get("site", "") if isinstance(entry, dict) else ""
+    return Credential(name=new, token_path=token_path, scope=scope, site=site)
+
+
 def add(
     name: str,
     token: str,

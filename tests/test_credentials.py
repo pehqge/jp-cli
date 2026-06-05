@@ -146,6 +146,77 @@ def test_set_site_missing_name_raises(home):
         credentials.set_site("ghost", "https://a.example", scope="global")
 
 
+def test_remove_drops_entry_and_managed_token_file(home):
+    cred = credentials.add("srv", "REMOVETOKEN1234567890", scope="global")
+    tok = Path(cred.token_path)
+    assert tok.is_file()
+    credentials.remove("srv", scope="global")
+    assert not tok.exists()
+    reg = json.loads((home / ".config" / "jp" / "credentials.json").read_text())
+    assert "srv" not in reg["credentials"]
+
+
+def test_remove_keeps_external_add_path_file(home, tmp_path):
+    src = tmp_path / "mytoken"
+    src.write_text("EXTERNALTOKEN1234567890\n")
+    credentials.add_path("bypath", str(src), scope="global")
+    credentials.remove("bypath", scope="global")
+    # External file (registered via add_path) must survive removal.
+    assert src.is_file()
+    reg = json.loads((home / ".config" / "jp" / "credentials.json").read_text())
+    assert "bypath" not in reg["credentials"]
+
+
+def test_remove_missing_name_raises(home):
+    with pytest.raises(UsageError):
+        credentials.remove("ghost", scope="global")
+
+
+def test_rename_moves_entry_and_managed_token_file(home):
+    cred = credentials.add("old", "RENAMETOKEN1234567890", scope="global")
+    old_tok = Path(cred.token_path)
+    renamed = credentials.rename("old", "new", scope="global")
+    assert renamed.name == "new"
+    new_tok = Path(renamed.token_path)
+    assert new_tok.name == "new.token"
+    assert new_tok.is_file()
+    assert not old_tok.exists()
+    assert credentials.read_token(renamed) == "RENAMETOKEN1234567890"
+    reg = json.loads((home / ".config" / "jp" / "credentials.json").read_text())
+    assert "old" not in reg["credentials"]
+    assert reg["credentials"]["new"]["token_path"] == str(new_tok)
+
+
+def test_rename_to_existing_name_raises(home):
+    credentials.add("a", "AAAARENAMETOKEN123456", scope="global")
+    credentials.add("b", "BBBBRENAMETOKEN123456", scope="global")
+    with pytest.raises(UsageError):
+        credentials.rename("a", "b", scope="global")
+
+
+def test_rename_missing_name_raises(home):
+    with pytest.raises(UsageError):
+        credentials.rename("ghost", "new", scope="global")
+
+
+def test_rename_preserves_site(home):
+    credentials.add("old", "SITERENAMETOKEN12345", scope="global", site="https://hub.example.com")
+    renamed = credentials.rename("old", "new", scope="global")
+    assert renamed.site == "https://hub.example.com"
+    reg = json.loads((home / ".config" / "jp" / "credentials.json").read_text())
+    assert reg["credentials"]["new"]["site"] == "https://hub.example.com"
+
+
+def test_rename_external_add_path_keeps_token_path(home, tmp_path):
+    src = tmp_path / "mytoken"
+    src.write_text("EXTRENAMETOKEN123456\n")
+    credentials.add_path("old", str(src), scope="global")
+    renamed = credentials.rename("old", "new", scope="global")
+    # External token path is kept verbatim (not moved into credentials.d).
+    assert renamed.token_path == str(src)
+    assert src.is_file()
+
+
 def test_list_for_site_filters_and_wildcards(home):
     credentials.add("a", "AAAATOKEN1234567890", scope="global", site="https://a.example")
     credentials.add("b", "BBBBTOKEN1234567890", scope="global", site="https://b.example")

@@ -5,6 +5,7 @@ from __future__ import annotations
 from . import (
     clone,
     config_cmd,
+    credentials_cmd,
     diff,
     doctor,
     ignore_cmd,
@@ -25,6 +26,7 @@ ALL = [
     clone,
     init,
     login,
+    credentials_cmd,
     pull,
     push,
     status,

@@ -144,6 +144,24 @@ Args novos: `--url`/`--site` (URL non-interativa), `--no-browser`.
 - `tests/test_login.py`: mock `webbrowser`+stdin — site salvo, nome default,
   `--no-browser`, `--url`.
 
+## Incremento: gerenciar credenciais (`jp credentials`)
+
+Não havia como ver/editar/deletar credenciais salvas (só `jp login` adiciona).
+Decisão (Pedro): **comando dedicado** (não shortcut destrutivo no picker do clone)
++ hint. Delete nunca no picker — só `s` (set-site, não-destrutivo) lá.
+
+- `credentials.py`: `remove(name, *, scope, root=None)` (apaga entry; unlink do
+  token file só se gerenciado em `credentials.d` — externos via `add_path` ficam),
+  `rename(old, new, *, scope, root=None)` (valida nome, renomeia entry + token
+  gerenciado).
+- `tui.py`: `credential_manager(creds, *, on_delete, on_set_site, on_rename)` —
+  TUI: setas movem, `d` deleta (confirma `[y/N]`), `s` site, `r` renomeia, `q`
+  sai. `select_credential` ganha linha hint `Manage saved credentials with: jp
+  credentials`.
+- `commands/credentials_cmd.py`: sem args + tty → manager interativo; flags pra
+  script `--list` / `--rm NAME` / `--rename OLD NEW` / `--set-site NAME URL` /
+  `--force`. `--rm` non-tty exige `--force`. Registrado em `commands/__init__.py`.
+
 ## Ferramentas
 
 Testes: `PYTHONPATH=src /Users/pedro/pepy/bin/pytest -q`. Lint:
