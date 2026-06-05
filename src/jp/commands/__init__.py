@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from . import (
+    changelog,
     clone,
     config_cmd,
     diff,
@@ -38,4 +39,5 @@ ALL = [
     doctor,
     update,
     version,
+    changelog,
 ]
