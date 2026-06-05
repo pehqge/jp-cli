@@ -204,7 +204,8 @@ the session is cleaned up when you exit. See the
 | `jp terminal` | Open the remote machine's shell in your terminal, in the workspace folder. Creates/deletes only an ephemeral terminal session; touches no files. |
 | `jp doctor` | Diagnose token, connectivity, server status. |
 | `jp update` | Update jp to the latest version. |
-| `jp version` | Print the version (also `jp --version`). |
+| `jp changelog` | Show release notes (newer releases, a specific version, or `--all`). |
+| `jp version` | Print the version (`--changelog` also shows release notes; `jp --version`). |
 
 Global flags: `-q/--quiet`, `--no-color`. Every command has `--help`.
 
@@ -302,6 +303,22 @@ jp update --check   # just check; don't install
 
 For a standalone binary install, `jp update` prints the one-line reinstall
 command for your OS.
+
+`jp` also checks for a newer release at most once a day, in the background, and
+shows a one-line notice next time you run a command — only in an interactive
+terminal, never in scripts, pipes, or CI:
+
+```
+jp 1.1.1 → 1.2.0  (update available)
+run `jp changelog` to see what's new · `jp update` to upgrade
+```
+
+- Turn the notice off: `export JP_NO_UPDATE_NOTIFIER=1` or `jp config set update_notifier false`.
+- Opt in to automatic updates: `jp config set auto_update true`. When on, `jp`
+  updates itself in the background between commands and tells you on the next run.
+  It never updates the running command mid-flight, and never in CI or dev installs.
+- See what changed: `jp changelog` (releases newer than yours), `jp changelog 1.2.0`
+  (a specific version), `jp changelog --all`, or `jp version --changelog`.
 
 ---
 
