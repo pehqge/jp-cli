@@ -639,7 +639,7 @@ def credential_manager(
         ``cred.site``;
       - ``r`` rename via an inline name prompt pushed through
         ``on_rename(cred, newname) -> bool``; on True set ``cred.name``;
-      - ``q``/Esc quit.
+      - ``q``/Esc save and quit (every action is persisted as it happens).
 
     ``_reader`` is the test seam (see :func:`select_one`).
     """
@@ -670,7 +670,9 @@ def credential_manager(
         if extra is not None:
             lines.append(extra)
             lines.append("")
-        lines.append(f"{DIM}Up/Down move · d delete · s set site · r rename · q quit{RESET}")
+        lines.append(
+            f"{DIM}Up/Down move · d delete · s set site · r rename · q save and quit{RESET}"
+        )
         prev_lines = _render_block(lines, prev_lines)
 
     def prompt(reader: object, label: str) -> str | None:
