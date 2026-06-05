@@ -71,6 +71,49 @@ def test_hash_uses_content0_hash1_and_returns_sha256(monkeypatch):
     assert got == sha
     # We asked WITHOUT content (content=0) and WITH hash=1 -> no body download.
     assert any("content=0" in u and "hash=1" in u for u in seen_urls)
+    # ...and ALWAYS type=file, so a notebook-pairing ContentsManager (jupytext,
+    # which treats .md/.py/.Rmd as notebooks) hashes the RAW bytes rather than a
+    # converted-notebook model -- otherwise the server sha256 never matches the
+    # local sha256 and the file is classified as a perpetual conflict.
+    assert any("type=file" in u for u in seen_urls)
+
+
+def test_hash_forces_type_file_for_notebook_paired_extensions(monkeypatch):
+    """A jupytext server returns a notebook model (different bytes -> different
+    sha) for a .md/.py file unless we force type=file. Regression: jp must force
+    it so markdown/script files compare byte-faithfully and sync at all."""
+    api = _api()
+    seen_urls: list[str] = []
+
+    def fake_urlopen(req, timeout=None, context=None):
+        seen_urls.append(req.full_url)
+        return _FakeResp(json.dumps({"hash": "deadbeef", "hash_algorithm": "sha256"}).encode())
+
+    monkeypatch.setattr(urllib.request, "urlopen", fake_urlopen)
+    api.hash("users/alice/notes.md")
+    assert all("type=file" in u for u in seen_urls)
+
+
+def test_stat_as_file_forces_type_file_but_plain_stat_does_not(monkeypatch):
+    """``stat(as_file=True)`` (used by push's post-write size check) forces
+    type=file so a jupytext server reports the RAW byte size, not the converted
+    notebook size -- otherwise every markdown PUT trips a false size mismatch.
+    Plain ``stat()`` must NOT force it: ``jp rm`` relies on it to tell a
+    directory (type='directory') from a file."""
+    api = _api()
+    seen_urls: list[str] = []
+
+    def fake_urlopen(req, timeout=None, context=None):
+        seen_urls.append(req.full_url)
+        return _FakeResp(json.dumps({"type": "file", "size": 12, "path": "users/alice/x"}).encode())
+
+    monkeypatch.setattr(urllib.request, "urlopen", fake_urlopen)
+    api.stat("users/alice/dir-or-file")
+    assert all("type=file" not in u for u in seen_urls)  # dir detection preserved
+
+    seen_urls.clear()
+    api.stat("users/alice/notes.md", as_file=True)
+    assert all("type=file" in u for u in seen_urls)
 
 
 def test_hash_returns_none_when_server_gives_no_hash(monkeypatch):
