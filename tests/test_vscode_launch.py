@@ -101,3 +101,11 @@ def test_workspace_no_terminal_omits_tasks():
     ws = build_code_workspace("/x", URL, "cred", with_terminal=False)
     assert ws["folders"] == [{"path": "/x"}]
     assert "tasks" not in ws  # opens the folder, no auto-started task
+
+
+def test_workspace_program_override():
+    ws = build_code_workspace("/x", URL, "", program="jpw")
+    task = ws["tasks"]["tasks"][0]
+    assert task["command"] == "jpw"
+    assert task["label"] == "jpw remote terminal"
+    assert task["args"] == ["terminal", URL]

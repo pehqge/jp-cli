@@ -16,7 +16,12 @@ from typing import Any
 
 
 def build_code_workspace(
-    folder_open_target: str, url: str, credential: str, *, with_terminal: bool = True
+    folder_open_target: str,
+    url: str,
+    credential: str,
+    *,
+    with_terminal: bool = True,
+    program: str = "jp",
 ) -> dict[str, Any]:
     """Return the ``.code-workspace`` JSON structure (pure).
 
@@ -42,9 +47,9 @@ def build_code_workspace(
         "version": "2.0.0",
         "tasks": [
             {
-                "label": "jp remote terminal",
+                "label": f"{program} remote terminal",
                 "type": "process",
-                "command": "jp",
+                "command": program,
                 "args": args,
                 "runOptions": {"runOn": "folderOpen"},
                 "presentation": {"reveal": "always", "panel": "dedicated"},

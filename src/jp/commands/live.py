@@ -402,8 +402,11 @@ def _open_in_code(
     """
     from ..mount import vscode_launch
 
+    # Use the SAME program name the user invoked (jp, jpw, ...), so the VS Code
+    # auto-terminal task calls the same binary that has this standalone form.
+    program = os.path.basename(sys.argv[0] or "jp") or "jp"
     workspace = vscode_launch.build_code_workspace(
-        handle.open_target, url, credential, with_terminal=with_terminal
+        handle.open_target, url, credential, with_terminal=with_terminal, program=program
     )
     path = os.path.abspath(os.path.join(os.getcwd(), f"{leaf}.code-workspace"))
     try:
@@ -427,7 +430,7 @@ def _open_in_code(
 
     if not launched:
         ui.info(f"open this workspace in VS Code: {path}")
-        ui.info(f'then run a remote shell with: jp terminal "{url}"')
+        ui.info(f'then run a remote shell with: {program} terminal "{url}"')
     return path
 
 
