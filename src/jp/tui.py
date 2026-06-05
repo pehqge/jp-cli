@@ -464,6 +464,80 @@ def select_one(labels: Sequence[str], title: str = "", _reader: object | None = 
 
 
 # --------------------------------------------------------------------------- #
+# Mount access selector (writable vs read-only, with a remember toggle)
+# --------------------------------------------------------------------------- #
+
+
+def select_access(
+    mount_display: str,
+    *,
+    default_writable: bool = True,
+    _reader: object | None = None,
+) -> tuple[bool, bool] | None:
+    """Ask how to mount ``mount_display``: writable or read-only, and whether to
+    remember the choice. Returns ``(writable, remember)`` on confirm (Enter), or
+    None on cancel (Esc/q/EOF).
+
+    ``writable`` is the chosen access; ``remember`` means "save this as the
+    default and stop asking". The caller is responsible for persisting the
+    preference -- this function performs no file/network/config access.
+
+    Controls: Up/Down (or k/j) move between Writable/Read-only · Space toggle
+    remember · Enter confirm · Esc cancel.
+
+    ``_reader`` is a test seam (see :func:`settings_menu`).
+    """
+    if _reader is None and not interactive():
+        raise RuntimeError("select_access requires an interactive terminal")
+
+    rows = [
+        ("Writable", "your edits and deletes reach the server"),
+        ("Read-only", "safe -- the mount never writes"),
+    ]
+    idx = 0 if default_writable else 1
+    remember = False
+    label_w = max(len(label) for label, _ in rows) + 2
+    prev_lines = 0
+
+    def render() -> None:
+        nonlocal prev_lines
+        lines: list[str] = [f"{BOLD}Mount {mount_display}{RESET}", ""]
+        for i, (label, desc) in enumerate(rows):
+            cursor = f"{CYAN}▸{RESET} " if i == idx else "  "
+            color = CYAN if i == idx else ""
+            end = RESET if i == idx else ""
+            name = f"{color}{label.ljust(label_w)}{end}"
+            lines.append(f"{cursor}{name}{DIM}{desc}{RESET}")
+        lines.append("")
+        box = "[x]" if remember else "[ ]"
+        lines.append(f"  {box} Remember my choice (don't ask again)")
+        lines.append("")
+        lines.append(
+            f"{DIM}Up/Down move · space toggle remember · enter confirm · esc cancel{RESET}"
+        )
+        prev_lines = _render_block(lines, prev_lines)
+
+    _hide_cursor()
+    try:
+        with _reader if _reader is not None else _make_reader() as reader:
+            while True:
+                render()
+                key = reader.read_key()
+                if key in ("up", "k"):
+                    idx = (idx - 1) % len(rows)
+                elif key in ("down", "j"):
+                    idx = (idx + 1) % len(rows)
+                elif key == "space":
+                    remember = not remember
+                elif key == "enter":
+                    return idx == 0, remember
+                elif key in ("esc", "q", ""):
+                    return None
+    finally:
+        _show_cursor()
+
+
+# --------------------------------------------------------------------------- #
 # Keep/Delete confirmation selector (mirror-mode deletions)
 # --------------------------------------------------------------------------- #
 

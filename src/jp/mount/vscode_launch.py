@@ -15,12 +15,16 @@ from __future__ import annotations
 from typing import Any
 
 
-def build_code_workspace(folder_open_target: str, url: str, credential: str) -> dict[str, Any]:
+def build_code_workspace(
+    folder_open_target: str, url: str, credential: str, *, with_terminal: bool = True
+) -> dict[str, Any]:
     """Return the ``.code-workspace`` JSON structure (pure).
 
     - ``folder_open_target`` is the mounted folder/handle VS Code should open.
-    - The ``folderOpen`` task runs ``jp terminal <url> [--credential <name>]``;
-      when ``credential`` is empty the ``--credential`` flag is omitted.
+    - When ``with_terminal`` is True, a ``folderOpen`` task runs
+      ``jp terminal <url> [--credential <name>]``; when ``credential`` is empty
+      the ``--credential`` flag is omitted. When False, the workspace opens the
+      folder with NO auto-started task.
 
     The task is ``type: process`` with an explicit ``args`` array, NOT a shell
     string: VS Code executes ``jp`` directly with these argv, so no shell ever
@@ -28,25 +32,26 @@ def build_code_workspace(folder_open_target: str, url: str, credential: str) -> 
     therefore cannot inject a command (defense in depth -- the URL comes from the
     user's own command line, but we never build a shell string from it).
     """
+    workspace: dict[str, Any] = {"folders": [{"path": folder_open_target}]}
+    if not with_terminal:
+        return workspace
     args = ["terminal", url]
     if credential:
         args += ["--credential", credential]
-    return {
-        "folders": [{"path": folder_open_target}],
-        "tasks": {
-            "version": "2.0.0",
-            "tasks": [
-                {
-                    "label": "jp remote terminal",
-                    "type": "process",
-                    "command": "jp",
-                    "args": args,
-                    "runOptions": {"runOn": "folderOpen"},
-                    "presentation": {"reveal": "always", "panel": "dedicated"},
-                }
-            ],
-        },
+    workspace["tasks"] = {
+        "version": "2.0.0",
+        "tasks": [
+            {
+                "label": "jp remote terminal",
+                "type": "process",
+                "command": "jp",
+                "args": args,
+                "runOptions": {"runOn": "folderOpen"},
+                "presentation": {"reveal": "always", "panel": "dedicated"},
+            }
+        ],
     }
+    return workspace
 
 
 def launcher_argv(workspace_file: str, platform: str, code_on_path: bool) -> list[str] | None:

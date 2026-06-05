@@ -95,3 +95,9 @@ def test_launcher_windows_code_on_path():
 def test_launcher_windows_uri_fallback():
     argv = launcher_argv("C:\\x\\p.code-workspace", "win32", code_on_path=False)
     assert argv == ["cmd", "/c", "start", "", "vscode://file/C:\\x\\p.code-workspace"]
+
+
+def test_workspace_no_terminal_omits_tasks():
+    ws = build_code_workspace("/x", URL, "cred", with_terminal=False)
+    assert ws["folders"] == [{"path": "/x"}]
+    assert "tasks" not in ws  # opens the folder, no auto-started task

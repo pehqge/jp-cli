@@ -34,10 +34,11 @@ import contextlib
 import json
 import os
 import shutil
+import signal
 import sys
 import time
 
-from .. import agent_loader, paths, ui
+from .. import agent_loader, paths, tui, ui, user_settings
 from .. import config as config_mod
 from ..errors import EXIT_OK, SafetyError, UsageError
 from ..live_session import connect_live
@@ -48,14 +49,6 @@ from ._context import load_repo
 # the per-iteration sleep so KeyboardInterrupt stays responsive.
 _KEEPALIVE_INTERVAL = 30.0
 _SLEEP_STEP = 1.0
-
-# C7: the refresh-semantics warning shown after a successful mount.
-_REFRESH_WARNING = (
-    "Edits you make here save to the server immediately. Changes made ON the "
-    "server appear here when your editor/file-browser re-reads a file (open or "
-    "reload it) -- there is no live push. For a live view of server-side changes "
-    "(logs, job output), use a remote shell + 'tail -f' (e.g. jp terminal <URL>)."
-)
 
 # The C2 refusal shown when jp live is run inside a .jp workspace tree.
 _WORKSPACE_GUARD_MSG = (
@@ -86,6 +79,16 @@ def add_parser(subparsers: argparse._SubParsersAction) -> None:
         "--code",
         action="store_true",
         help="open the mounted folder in VS Code with a remote shell running",
+    )
+    p.add_argument(
+        "--no-terminal",
+        action="store_true",
+        help="with --code, do NOT auto-start the remote terminal (override the saved default)",
+    )
+    p.add_argument(
+        "--defaults",
+        action="store_true",
+        help="view/edit the saved jp live defaults (access, auto-terminal), then exit",
     )
     p.add_argument(
         "-y",
@@ -124,6 +127,8 @@ class _Aborted(Exception):
 def run(args: argparse.Namespace) -> int:
     if getattr(args, "print_agent", False):
         return _print_agent(args)
+    if getattr(args, "defaults", False):
+        return _defaults_menu()
     if getattr(args, "dry_run", False):
         return _dry_run(
             args.root,
@@ -131,6 +136,9 @@ def run(args: argparse.Namespace) -> int:
             show_stats=getattr(args, "stats", False),
             writable=not getattr(args, "read_only", False),
         )
+    # `jp live unmount`: stop the live mount that owns the current directory.
+    if (getattr(args, "url", None) or "") == "unmount":
+        return _unmount_here()
     try:
         return _live(args)
     except _Aborted:
@@ -255,34 +263,38 @@ def _confirm_writable(
     else:
         ui.out("  (empty)")
 
-    # --read-only forces read-only and skips the prompt entirely.
+    # Explicit per-run flags win over everything.
     if getattr(args, "read_only", False):
-        ui.info(f"mounting READ-ONLY at {display}.")
         return False
-
-    # --yes assumes writable and skips the prompt.
     if getattr(args, "yes", False):
         return writable
 
-    # A non-tty without --yes is refused (we must not block on input()).
+    # A saved global default (set via the picker's "remember" or `jp live
+    # --defaults`) skips the prompt -- this also makes unattended runs work.
+    saved = user_settings.get_live_access()
+    if saved == "writable":
+        ui.detail("using saved default: writable  (change with: jp live --defaults)")
+        return True
+    if saved == "read-only":
+        ui.detail("using saved default: read-only  (change with: jp live --defaults)")
+        return False
+
+    # Otherwise ask interactively with the pretty selector.
     if not sys.stdin.isatty():
         raise SafetyError(
             "refusing to start a live mount unattended. Re-run with --yes (writable) "
-            "or --read-only, or run it in an interactive terminal."
+            "or --read-only, or set a default with: jp live --defaults."
         )
 
-    prompt = (
-        f"Mount at {display} -- [W]ritable (edits/deletes reach the server) "
-        "or [r]ead-only? ([W]/r, c=cancel): "
-    )
-    choice = input(prompt).strip().lower()
-    if choice in ("", "w"):
-        return True
-    if choice == "r":
-        return False
-    # 'c', anything else -> cancel.
-    ui.info("aborted")
-    raise _Aborted()
+    result = tui.select_access(f"{prefix} -> {display}", default_writable=writable)
+    if result is None:
+        ui.info("aborted")
+        raise _Aborted()
+    chosen, remember = result
+    if remember:
+        user_settings.set_live_access("writable" if chosen else "read-only")
+        ui.detail("saved as your default  (change with: jp live --defaults)")
+    return chosen
 
 
 def _serve(
@@ -296,7 +308,7 @@ def _serve(
     cfg,
 ) -> int:
     """Wrap in the cache, start WebDAV, mount under the auto handle, run keep-alive."""
-    from ..mount import os_mount
+    from ..mount import live_state, os_mount
     from ..mount.webdav_server import DavServer
     from ..vfs_cache import CachingFS
 
@@ -304,30 +316,37 @@ def _serve(
     dav = DavServer(cached, writable=writable).start()
     handle = None
     workspace_file = None
+    recorded = False
     try:
-        ui.success(f"WebDAV server: {dav.url}")
-
         explicit = getattr(args, "mount", None)
         if explicit:
             handle = _explicit_mount_handle(os_mount, dav.url, explicit)
         else:
             handle = os_mount.build_auto_mount_handle(dav.url, leaf, os.getcwd(), sys.platform)
-        ui.success(f"mounted at {handle.display}")
 
         if getattr(args, "code", False):
-            workspace_file = _open_in_code(handle, url=url, credential=cfg.credential, leaf=leaf)
-
-        # C7: refresh-semantics warning.
-        ui.warn(_REFRESH_WARNING)
-
-        if writable:
-            ui.warn(
-                "WRITABLE mount: local edits WRITE to the remote, overwriting files in "
-                "place. Removals are NEVER recursive, but there is NO automatic "
-                "server-side undo -- keep your own backup."
+            # Auto-terminal follows the saved default; --no-terminal forces it off.
+            with_terminal = user_settings.get_live_code_terminal() and not getattr(
+                args, "no_terminal", False
+            )
+            workspace_file = _open_in_code(
+                handle, url=url, credential=cfg.credential, leaf=leaf, with_terminal=with_terminal
             )
 
-        ui.info(f"leave this running to use {handle.display}; press Ctrl-C to stop.")
+        # Register this running mount so `jp live unmount` can find + stop it,
+        # and route SIGTERM (sent by that command) into a clean Ctrl-C-style stop.
+        with _swallow():
+            live_state.record(
+                handle.display,
+                pid=os.getpid(),
+                url=url,
+                display=handle.display,
+                created=time.time(),
+            )
+            recorded = True
+        _install_signal_stop()
+
+        _print_live_banner(prefix=prefix, writable=writable, display=handle.display, url=url)
         _keepalive_loop(cached)
         return EXIT_OK
     except os_mount.MountError as exc:
@@ -338,6 +357,9 @@ def _serve(
         ui.out(f"  mount it manually: {' '.join(plan.argv)}")
         return EXIT_OK
     finally:
+        if recorded and handle is not None:
+            with _swallow():
+                live_state.remove(handle.display)
         if handle is not None:
             with _swallow():
                 handle.unmount()
@@ -368,16 +390,21 @@ def _explicit_mount_handle(os_mount, url: str, point: str):
     )
 
 
-def _open_in_code(handle, *, url: str, credential: str, leaf: str) -> str | None:
+def _open_in_code(
+    handle, *, url: str, credential: str, leaf: str, with_terminal: bool = True
+) -> str | None:
     """Write a LOCAL ``<leaf>.code-workspace`` and open it in VS Code.
 
     The workspace file is written in the cwd -- NEVER inside the mounted folder
-    (the server rejects dotfiles). Returns the path written (for cleanup), or
-    ``None`` if it could not be written.
+    (the server rejects dotfiles). When ``with_terminal`` is False the workspace
+    omits the auto-start remote-terminal task. Returns the path written (for
+    cleanup), or ``None`` if it could not be written.
     """
     from ..mount import vscode_launch
 
-    workspace = vscode_launch.build_code_workspace(handle.open_target, url, credential)
+    workspace = vscode_launch.build_code_workspace(
+        handle.open_target, url, credential, with_terminal=with_terminal
+    )
     path = os.path.abspath(os.path.join(os.getcwd(), f"{leaf}.code-workspace"))
     try:
         with open(path, "w", encoding="utf-8") as fh:
@@ -402,6 +429,107 @@ def _open_in_code(handle, *, url: str, credential: str, leaf: str) -> str | None
         ui.info(f"open this workspace in VS Code: {path}")
         ui.info(f'then run a remote shell with: jp terminal "{url}"')
     return path
+
+
+def _print_live_banner(*, prefix: str, writable: bool, display: str, url: str) -> None:
+    """The clean, scannable post-mount status block (no secret URL in scrollback)."""
+    access = "writable" if writable else "read-only"
+    ui.out("")
+    ui.success(f"{prefix}  ·  {access}")
+    ui.detail(f"  mounted   {display}")
+    ui.out("")
+    ui.detail("  server-side changes appear when a file is re-read (no live push)")
+    ui.detail(f'  live output   jp terminal "{url}"')
+    if writable:
+        ui.warn("writable -- edits & deletes reach the server, no undo. keep a backup.")
+    ui.out("")
+    ui.detail("  stop   Ctrl-C   ·   or  jp live unmount  (from the mounted folder)")
+    ui.out("")
+
+
+def _install_signal_stop() -> None:
+    """Route SIGTERM into a clean Ctrl-C-style stop so the finally blocks run.
+
+    `jp live unmount` sends SIGTERM to this process; translating it to
+    KeyboardInterrupt reuses the keep-alive loop's existing clean-shutdown path
+    (unmount + cleanup + kernel release). Best-effort: signal handling differs on
+    Windows, so any failure is swallowed.
+    """
+
+    def _stop(_signum: int, _frame: object) -> None:
+        raise KeyboardInterrupt
+
+    with contextlib.suppress(Exception):
+        signal.signal(signal.SIGTERM, _stop)
+
+
+def _unmount_here() -> int:
+    """`jp live unmount`: stop the live mount that owns the current directory."""
+    from ..mount import live_state
+
+    rec = live_state.find_for_path(os.getcwd())
+    if rec is None:
+        raise SafetyError(
+            "no live mount found for this directory. Run `jp live unmount` from "
+            "inside a folder mounted by `jp live`."
+        )
+    pid = int(rec.get("pid", 0) or 0)
+    display = rec.get("display") or rec.get("mountpoint", "")
+    if pid <= 0:
+        live_state.remove(rec.get("mountpoint", ""))
+        raise SafetyError("the live mount record is incomplete; cleared it. Try remounting.")
+
+    try:
+        os.kill(pid, signal.SIGTERM)
+    except ProcessLookupError:
+        # The owning process is already gone -- clear the stale record.
+        live_state.remove(rec.get("mountpoint", ""))
+        ui.info(f"the live mount at {display} was already stopped; cleared its record.")
+        return EXIT_OK
+    except OSError as exc:
+        raise SafetyError(f"could not signal the live mount (pid {pid}): {exc}") from exc
+
+    ui.success(f"stopping live mount at {display} (pid {pid}).")
+    ui.detail("  it will unmount and release the kernel.")
+    return EXIT_OK
+
+
+def _defaults_menu() -> int:
+    """`jp live --defaults`: view/edit the saved global jp live defaults."""
+    access = tui.Setting(
+        key="access",
+        label="Default access",
+        value=user_settings.get_live_access(),
+        options=("ask", "writable", "read-only"),
+        help_text="What jp live does at mount time: 'ask' shows the picker; "
+        "'writable'/'read-only' skip it and mount that way.",
+    )
+    code_term = tui.Setting(
+        key="code_terminal",
+        label="--code auto-terminal",
+        value=user_settings.get_live_code_terminal(),
+        options=(True, False),
+        help_text="Whether --code auto-starts the remote terminal in VS Code. "
+        "Per run, --no-terminal overrides this.",
+    )
+    if not tui.interactive():
+        ui.info(
+            f"live defaults (edit interactively with a tty): access={access.value}, "
+            f"code_terminal={str(code_term.value).lower()}"
+        )
+        ui.info(f"stored at {user_settings.settings_path()}")
+        return EXIT_OK
+
+    result = tui.settings_menu([access, code_term], title="jp live defaults")
+    if result is None:
+        ui.info("unchanged")
+        return EXIT_OK
+    if access.changed:
+        user_settings.set_live_access(str(access.value))
+    if code_term.changed:
+        user_settings.set_live_code_terminal(bool(code_term.value))
+    ui.success(f"saved to {user_settings.settings_path()}")
+    return EXIT_OK
 
 
 def _keepalive_loop(cached) -> None:

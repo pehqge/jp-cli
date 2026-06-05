@@ -20,6 +20,14 @@ from jp.errors import EXIT_OK, SafetyError, UsageError
 _URL = "https://hub.example/user/alice/lab/tree/privado/jp-live-test"
 
 
+@pytest.fixture(autouse=True)
+def _isolate_user_state(tmp_path, monkeypatch):
+    """Keep every test off the real ~/.config/jp (user_settings + live_state)
+    and never install a real SIGTERM handler in the pytest process."""
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
+    monkeypatch.setattr(live, "_install_signal_stop", lambda: None)
+
+
 def _args(**over):
     base = {
         "url": None,
@@ -161,7 +169,9 @@ def test_enter_means_writable(tmp_path, monkeypatch):
     mounted = {}
     _stub_mount(monkeypatch, mounted)
     monkeypatch.setattr(live.sys.stdin, "isatty", lambda: True)
-    monkeypatch.setattr("builtins.input", lambda *a: "")  # Enter
+    monkeypatch.setattr(live.user_settings, "get_live_access", lambda: "ask")
+    # writable, no remember
+    monkeypatch.setattr(live.tui, "select_access", lambda *a, **k: (True, False))
 
     rc = live.run(_args(url=_URL))
     assert rc == EXIT_OK
@@ -176,7 +186,8 @@ def test_r_means_read_only(tmp_path, monkeypatch):
     mounted = {}
     _stub_mount(monkeypatch, mounted)
     monkeypatch.setattr(live.sys.stdin, "isatty", lambda: True)
-    monkeypatch.setattr("builtins.input", lambda *a: "r")
+    monkeypatch.setattr(live.user_settings, "get_live_access", lambda: "ask")
+    monkeypatch.setattr(live.tui, "select_access", lambda *a, **k: (False, False))  # read-only
 
     rc = live.run(_args(url=_URL))
     assert rc == EXIT_OK
@@ -195,7 +206,8 @@ def test_cancel_aborts_cleanly(tmp_path, monkeypatch):
     monkeypatch.setattr(live, "_serve", _serve)
     monkeypatch.setattr(live, "_planned_display", lambda args, leaf: "./jp-live-test")
     monkeypatch.setattr(live.sys.stdin, "isatty", lambda: True)
-    monkeypatch.setattr("builtins.input", lambda *a: "c")
+    monkeypatch.setattr(live.user_settings, "get_live_access", lambda: "ask")
+    monkeypatch.setattr(live.tui, "select_access", lambda *a, **k: None)  # cancel
 
     rc = live.run(_args(url=_URL))
     assert rc == EXIT_OK
@@ -366,3 +378,149 @@ def test_print_agent_read_only_reflected(tmp_path, monkeypatch, capsys):
     out = capsys.readouterr().out
     assert rc == EXIT_OK
     assert "writable=False" in out
+
+
+# --------------------------------------------------------------------------- #
+# Saved global defaults (user_settings) skip the picker
+# --------------------------------------------------------------------------- #
+def test_saved_writable_default_skips_picker(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    _patch_network(monkeypatch)
+    mounted = {}
+    _stub_mount(monkeypatch, mounted)
+    monkeypatch.setattr(live.sys.stdin, "isatty", lambda: True)
+    monkeypatch.setattr(live.user_settings, "get_live_access", lambda: "writable")
+    # The picker must NOT be consulted when a default is saved.
+    monkeypatch.setattr(
+        live.tui, "select_access", lambda *a, **k: pytest.fail("picker should be skipped")
+    )
+    rc = live.run(_args(url=_URL))
+    assert rc == EXIT_OK
+    assert mounted["writable"] is True
+
+
+def test_saved_read_only_default_skips_picker(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    _patch_network(monkeypatch)
+    mounted = {}
+    _stub_mount(monkeypatch, mounted)
+    monkeypatch.setattr(live.sys.stdin, "isatty", lambda: True)
+    monkeypatch.setattr(live.user_settings, "get_live_access", lambda: "read-only")
+    monkeypatch.setattr(
+        live.tui, "select_access", lambda *a, **k: pytest.fail("picker should be skipped")
+    )
+    rc = live.run(_args(url=_URL))
+    assert rc == EXIT_OK
+    assert mounted["writable"] is False
+
+
+def test_remember_persists_choice(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    _patch_network(monkeypatch)
+    _stub_mount(monkeypatch, {})
+    monkeypatch.setattr(live.sys.stdin, "isatty", lambda: True)
+    monkeypatch.setattr(live.user_settings, "get_live_access", lambda: "ask")
+    saved = {}
+    monkeypatch.setattr(live.user_settings, "set_live_access", lambda v: saved.update(v=v))
+    # picker returns (read-only, remember=True)
+    monkeypatch.setattr(live.tui, "select_access", lambda *a, **k: (False, True))
+    rc = live.run(_args(url=_URL))
+    assert rc == EXIT_OK
+    assert saved == {"v": "read-only"}
+
+
+# --------------------------------------------------------------------------- #
+# jp live unmount
+# --------------------------------------------------------------------------- #
+def test_unmount_here_signals_owner(tmp_path, monkeypatch):
+    from jp.mount import live_state
+
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
+    mp = str(tmp_path / "mnt")
+    live_state.record(mp, pid=4242, url=_URL, display=mp, created=1.0)
+    monkeypatch.chdir(tmp_path / "mnt" if (tmp_path / "mnt").exists() else tmp_path)
+    # find_for_path uses cwd; point cwd at the recorded mountpoint
+    import os as _os
+
+    _os.makedirs(mp, exist_ok=True)
+    monkeypatch.chdir(mp)
+    killed = {}
+    monkeypatch.setattr(live.os, "kill", lambda pid, sig: killed.update(pid=pid, sig=sig))
+    rc = live.run(_args(url="unmount"))
+    assert rc == EXIT_OK
+    assert killed["pid"] == 4242
+
+
+def test_unmount_here_no_mount_errors(tmp_path, monkeypatch):
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
+    monkeypatch.chdir(tmp_path)
+    with pytest.raises(SafetyError):
+        live.run(_args(url="unmount"))
+
+
+def test_unmount_here_stale_record_cleared(tmp_path, monkeypatch):
+    from jp.mount import live_state
+
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
+    mp = str(tmp_path / "mnt")
+    import os as _os
+
+    _os.makedirs(mp, exist_ok=True)
+    live_state.record(mp, pid=999999, url=_URL, display=mp, created=1.0)
+    monkeypatch.chdir(mp)
+
+    def _kill(pid, sig):
+        raise ProcessLookupError
+
+    monkeypatch.setattr(live.os, "kill", _kill)
+    rc = live.run(_args(url="unmount"))
+    assert rc == EXIT_OK
+    assert live_state.find_for_path(mp) is None  # stale record removed
+
+
+# --------------------------------------------------------------------------- #
+# --no-terminal and --defaults
+# --------------------------------------------------------------------------- #
+def test_no_terminal_omits_task(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    import os as _os
+    from pathlib import Path as _Path
+
+    class _Handle:
+        display = str(tmp_path / "jp-live-test")
+        open_target = str(tmp_path / "jp-live-test")
+
+        def unmount(self):
+            pass
+
+        def cleanup(self):
+            pass
+
+    # Never launch a real editor.
+    monkeypatch.setattr(live.shutil, "which", lambda name: None)
+    from jp.mount import vscode_launch
+
+    monkeypatch.setattr(vscode_launch, "launcher_argv", lambda *a, **k: None)
+
+    # with_terminal=False -> the workspace has NO auto-start task.
+    wf = live._open_in_code(
+        _Handle(), url=_URL, credential="c", leaf="jp-live-test", with_terminal=False
+    )
+    assert "tasks" not in json.loads(_Path(wf).read_text())
+    _os.unlink(wf)
+
+    # with_terminal=True -> the task is present.
+    wf2 = live._open_in_code(
+        _Handle(), url=_URL, credential="c", leaf="jp-live-test", with_terminal=True
+    )
+    assert "tasks" in json.loads(_Path(wf2).read_text())
+    _os.unlink(wf2)
+
+
+def test_defaults_menu_non_interactive(tmp_path, monkeypatch, capsys):
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
+    monkeypatch.setattr(live.tui, "interactive", lambda: False)
+    rc = live.run(_args(url=None, defaults=True))
+    out = capsys.readouterr().out
+    assert rc == EXIT_OK
+    assert "access=" in out and "code_terminal=" in out
