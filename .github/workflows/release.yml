@@ -24,8 +24,8 @@ jobs:
     name: Build wheel, sdist and zipapp
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
-      - uses: actions/setup-python@v6
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+      - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6
         with:
           python-version: "3.12"
       - name: Build wheel and sdist
@@ -34,7 +34,7 @@ jobs:
           python -m build
       - name: Build zipapp
         run: python -m zipapp src -m "jp.cli:main" -p "/usr/bin/env python3" -o dist/jp.pyz
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: python-dist
           path: dist/*
@@ -53,8 +53,8 @@ jobs:
           - { os: windows-latest, name: windows-x86_64 }
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v6
-      - uses: actions/setup-python@v6
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+      - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6
         with:
           python-version: "3.12"
       - run: python -m pip install pyinstaller
@@ -69,7 +69,7 @@ jobs:
         run: |
           mkdir staged
           copy dist\jp.exe staged\jp-${{ matrix.name }}.exe
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: binary-${{ matrix.name }}
           path: staged/*
@@ -79,7 +79,7 @@ jobs:
     needs: [build-python, build-binaries]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/download-artifact@v8
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
           path: artifacts
       - name: Collect release assets and checksums
@@ -87,7 +87,7 @@ jobs:
           mkdir -p release
           find artifacts -type f \( -name '*.whl' -o -name '*.tar.gz' -o -name 'jp.pyz' -o -name 'jp-*' \) -exec cp {} release/ \;
           cd release && sha256sum * > SHA256SUMS
-      - uses: softprops/action-gh-release@v3
+      - uses: softprops/action-gh-release@b4309332981a82ec1c5618f44dd2e27cc8bfbfda # v3
         with:
           # On workflow_call github.ref is the branch, not the tag, so the tag
           # must be passed in explicitly; push/dispatch fall back to the ref.
@@ -107,13 +107,13 @@ jobs:
     permissions:
       id-token: write
     steps:
-      - uses: actions/download-artifact@v8
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
           name: python-dist
           path: dist
       - name: Drop non-PyPI artifacts
         run: rm -f dist/jp.pyz
-      - uses: pypa/gh-action-pypi-publish@release/v1
+      - uses: pypa/gh-action-pypi-publish@cef221092ed1bacb1cc03d23a2d87d1d172e277b # release/v1 (v1.13.0)
         with:
           # When release-please calls this as a reusable workflow, OIDC auth
           # keys off job_workflow_ref (release.yml -> matches the PyPI Trusted
