@@ -65,6 +65,11 @@ _ALWAYS_FORBIDDEN = ("COPY",)
 _DAV_NS = "{DAV:}"
 
 
+def _etag(size: int, mtime: float) -> str:
+    """A strong validator tied to (size, mtime): changes whenever the file does."""
+    return f'"{size:x}-{int(mtime):x}"'
+
+
 class _DavRequestHandler(BaseHTTPRequestHandler):
     """Handles one WebDAV request against ``self.server.fs``.
 
@@ -238,9 +243,12 @@ class _DavRequestHandler(BaseHTTPRequestHandler):
         if rtype == "directory":
             resourcetype = "<D:resourcetype><D:collection/></D:resourcetype>"
             contentlength = ""
+            etag = ""
         else:
             resourcetype = "<D:resourcetype/>"
             contentlength = f"<D:getcontentlength>{size}</D:getcontentlength>"
+            # An ETag tied to (size, mtime) lets the client notice changes.
+            etag = f"<D:getetag>{escape(_etag(size, mtime))}</D:getetag>"
         lastmod = formatdate(mtime, usegmt=True)
         display = escape(name or "/")
         return (
@@ -251,6 +259,7 @@ class _DavRequestHandler(BaseHTTPRequestHandler):
             f"{resourcetype}"
             f"{contentlength}"
             f"<D:getlastmodified>{escape(lastmod)}</D:getlastmodified>"
+            f"{etag}"
             f"<D:displayname>{display}</D:displayname>"
             "</D:prop>"
             "<D:status>HTTP/1.1 200 OK</D:status>"
@@ -327,6 +336,12 @@ class _DavRequestHandler(BaseHTTPRequestHandler):
         self.send_header("Content-Type", "application/octet-stream")
         self.send_header("Content-Length", str(length))
         self.send_header("Accept-Ranges", "bytes")
+        # Cache validators so the OS WebDAV client refetches when the remote file
+        # changes (e.g. edited on the server). Without these the client serves a
+        # stale cached copy forever. no-cache forces revalidation every open.
+        self.send_header("Last-Modified", formatdate(st.mtime, usegmt=True))
+        self.send_header("ETag", _etag(st.size, st.mtime))
+        self.send_header("Cache-Control", "no-cache")
         if status == 206:
             self.send_header("Content-Range", f"bytes {offset}-{offset + length - 1}/{total}")
         self.end_headers()

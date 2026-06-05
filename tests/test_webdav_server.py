@@ -512,3 +512,23 @@ def test_macos_save_sequence_writes_file(wserver):
 
     # The save actually landed on disk.
     assert (root / "new.txt").read_bytes() == b"hello world"
+
+
+def test_get_sends_cache_validators(server):
+    status, headers, _ = _request(server, "GET", "/a.txt")
+    assert status == 200
+    assert headers.get("Last-Modified")  # present
+    assert headers.get("ETag")
+    assert headers.get("Cache-Control") == "no-cache"
+
+
+def test_etag_changes_with_content(server, tmp_path):
+    # ETag is tied to (size, mtime): editing the file changes it, so the OS
+    # WebDAV client can tell the cached copy is stale.
+    _, h1, _ = _request(server, "GET", "/a.txt")
+    import time as _t
+
+    _t.sleep(1.1)  # mtime has 1s resolution in the listing path
+    (tmp_path / "a.txt").write_bytes(b"hello world CHANGED")
+    _, h2, _ = _request(server, "GET", "/a.txt")
+    assert h1.get("ETag") != h2.get("ETag")
