@@ -91,7 +91,7 @@ jobs:
           mkdir -p release
           find artifacts -type f \( -name '*.whl' -o -name '*.tar.gz' -o -name 'jp.pyz' -o -name 'jp-*' \) -exec cp {} release/ \;
           cd release && sha256sum * > SHA256SUMS
-      - uses: softprops/action-gh-release@b4309332981a82ec1c5618f44dd2e27cc8bfbfda # v3
+      - uses: softprops/action-gh-release@718ea10b132b3b2eba29c1007bb80653f286566b # v3
         with:
           # On workflow_call github.ref is the branch, not the tag, so the tag
           # must be passed in explicitly; push/dispatch fall back to the ref.
